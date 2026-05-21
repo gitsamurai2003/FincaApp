@@ -3,42 +3,57 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { inicializarBaseDeDatos } from '../db/init';
 
 export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
+  ErrorBoundary
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
+  const [fontsLoaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     ...FontAwesome.font,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+  const [dbLoaded, setDbLoaded] = useState(false);
+
   useEffect(() => {
     if (error) throw error;
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
+    async function prepararEntorno() {
+      try {
+        // Al importar esto, se ejecuta el db/client.ts, alterando la tabla a la fuerza
+        await inicializarBaseDeDatos();
+        console.log("DB: Base de datos cargada correctamente en el Layout.");
+      } catch (e) {
+        console.error("DB_ERROR: Falla crítica al inicializar las tablas:", e);
+      } finally {
+        setDbLoaded(true);
+      }
+    }
+
+    prepararEntorno();
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded && dbLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [fontsLoaded, dbLoaded]);
 
-  if (!loaded) {
+  if (!fontsLoaded || !dbLoaded) {
     return null;
   }
 
@@ -52,6 +67,11 @@ function RootLayoutNav() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* Dejamos las rutas fijadas aquí para que no te tiren más WARN */}
+        <Stack.Screen name="crear-finca" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name="inventario" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name="produccion" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name="crear-animal" options={{ headerShown: false, presentation: 'card' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>
