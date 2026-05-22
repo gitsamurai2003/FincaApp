@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, ListTree } from 'lucide-react-native';
+import { BookOpen, Home, ListTree } from 'lucide-react-native';
 import React from 'react';
 import { Platform } from 'react-native';
 
@@ -46,6 +46,15 @@ export default function TabLayout() {
         options={{
           title: 'Registros',
           tabBarIcon: ({ color }) => <ListTree size={22} color={color} />,
+        }}
+      />
+
+      {/* 3. VISIBLE: Lectura */}
+      <Tabs.Screen
+        name="lectura" 
+        options={{
+          title: 'Lectura',
+          tabBarIcon: ({ color }) => <BookOpen size={22} color={color} />,
         }}
       />
 
