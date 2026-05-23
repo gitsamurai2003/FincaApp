@@ -1,4 +1,4 @@
-import { useFocusEffect, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import {
   Award,
   Calculator,
@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Heart,
   Landmark,
+  ListTree,
   MapPin,
   Milk,
   Scale,
@@ -89,13 +90,23 @@ export default function RegistrosScreen() {
     }, [cargarMetricas])
   );
 
-  return (
+return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* HEADER PRINCIPAL */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Histórico de Registros</Text>
-        <Text style={styles.headerSubtitle}>{fincaNombre}</Text>
-      </View>
+      
+      {/* 1. ASEGURAMOS QUE EL HEADER NATIVO DEL STACK NO INTERFIERA */}
+      <Stack.Screen options={{ headerShown: false }} />
+
+{/* 2. HEADER PRINCIPAL (Inspirado en el diseño modular de la biblioteca) */}
+<View style={styles.header}>
+  <View style={styles.iconBg}>
+    <ListTree color="#1e293b" size={24} />
+  </View>
+  
+  <View style={{ flex: 1, marginLeft: 12 }}>
+    <Text style={styles.headerTitle}>Histórico de Registros</Text>
+    <Text style={styles.sub}>{fincaNombre}</Text>
+  </View>
+</View>
 
       {/* FILAS DE SELECCIÓN DE GRUPOS */}
       <View style={styles.menuGroup}>
@@ -119,7 +130,7 @@ export default function RegistrosScreen() {
         {/* ACCESO: INVENTARIO GLOBAL */}
         <TouchableOpacity 
           style={styles.menuItem} 
-          onPress={() => router.push('/inventario')}
+          onPress={() => router.push({ pathname: '/inventario', params: { origen: 'registros' } })}
         >
           <View style={[styles.iconWrapper, { backgroundColor: '#eff6ff' }]}>
             <ClipboardList color="#3b82f6" size={22} />
@@ -267,19 +278,33 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: 100, // Espacio suficiente para no chocar con tu barra flotante absoluta
   },
-  header: {
-    paddingTop: 65,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
+header: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingTop: 60,         // Espacio generoso para la barra de estado
+  paddingHorizontal: 16,
+  paddingBottom: 20,
+  backgroundColor: '#fff',
+  borderBottomWidth: 1,
+  borderColor: '#e2e8f0',
+},
+iconBg: { 
+  padding: 10, 
+  borderRadius: 12, 
+  backgroundColor: '#f1f5f9' // Fondo gris azulado suave que resalta el ícono
+},
+headerTitle: { 
+  fontSize: 22, 
+  fontWeight: '800', 
+  color: '#0f172a',
+  includeFontPadding: false,
+},
+sub: { 
+  fontSize: 13, 
+  color: '#065f46', 
+  fontWeight: '500', 
+  marginTop: 2,
+},
   headerSubtitle: {
     fontSize: 13,
     color: '#065f46',

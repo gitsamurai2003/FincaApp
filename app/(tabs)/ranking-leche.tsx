@@ -1,10 +1,11 @@
-import { useRouter } from 'expo-router';
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { useRouter } from 'expo-router';
 import { ArrowLeft, Medal, Milk } from 'lucide-react-native';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,12 +38,30 @@ export default function RankingLecheScreen() {
   const [fechaFin, setFechaFin] = useState(fechaLocalISO());
   const [soloActivos, setSoloActivos] = useState(true);
   const [soloLeche, setSoloLeche] = useState(true);
-  const [soloHembras, setSoloHembras] = useState(false);
+  
+  // ARREGLO 1: Por defecto en true. Al ser un ranking lechero, el foco son las hembras.
+  const [soloHembras, setSoloHembras] = useState(true); 
+  
   const [criterio, setCriterio] = useState<CriterioOrden>('promedioDia');
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [calculando, setCalculando] = useState(false);
   const [calculado, setCalculado] = useState(false);
 
+    useEffect(() => {
+      const backAction = () => {
+        // Redirige a registros en lugar de hacer el 'pop' normal
+        router.replace('/registros'); 
+        return true; // Esto le dice a React Native: "Yo me encargo, no hagas la acción por defecto"
+      };
+  
+      const backHandler = BackHandler.addEventListener(
+        'hardwareBackPress',
+        backAction
+      );
+  
+      return () => backHandler.remove();
+    }, []);
+    
   const aplicarPreset = (dias: number) => {
     setFechaInicio(haceDiasLocal(dias - 1));
     setFechaFin(fechaLocalISO());
@@ -81,14 +100,15 @@ export default function RankingLecheScreen() {
 
       const filtro = and(...condiciones);
 
+      // ARREGLO 2: Mapeo explícito con .mapWith() para curar los retornos de SQLite en Expo
       const rows = await db
         .select({
           animalId: animales.id,
           areteCodigo: animales.areteCodigo,
           nombre: animales.nombre,
-          totalLitros: sql<number>`sum(${produccionLeche.litros})`,
-          diasOrdeño: sql<number>`count(distinct ${produccionLeche.fecha})`,
-          pesadas: sql<number>`count(*)`,
+          totalLitros: sql<string>`sum(${produccionLeche.litros})`.mapWith(String),
+          diasOrdeño: sql<number>`count(distinct ${produccionLeche.fecha})`.mapWith(Number),
+          pesadas: sql<number>`count(*)`.mapWith(Number),
         })
         .from(produccionLeche)
         .innerJoin(animales, eq(produccionLeche.animalId, animales.id))
@@ -97,9 +117,9 @@ export default function RankingLecheScreen() {
 
       const lista: RankingRow[] = rows
         .map((r) => {
-          const total = Number(r.totalLitros) || 0;
-          const dias = Number(r.diasOrdeño) || 0;
-          const pesadas = Number(r.pesadas) || 0;
+          const total = parseFloat(r.totalLitros) || 0;
+          const dias = r.diasOrdeño || 0;
+          const pesadas = r.pesadas || 0;
           return {
             animalId: r.animalId,
             areteCodigo: r.areteCodigo,
@@ -122,7 +142,7 @@ export default function RankingLecheScreen() {
       setRanking(lista);
       setCalculado(true);
     } catch (e) {
-      console.error(e);
+      console.error('Error calculando ranking:', e);
       Alert.alert('Error', 'No se pudo calcular el ranking.');
     } finally {
       setCalculando(false);
@@ -139,7 +159,7 @@ export default function RankingLecheScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
           <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
         <View style={styles.headerText}>

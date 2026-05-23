@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Dna, HeartPulse, ShieldCheck, Sprout } from 'lucide-react-native';
 import React from 'react';
 import {
-    Image, ScrollView, StyleSheet, Text, TouchableOpacity, View
+  Image, ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from 'react-native';
 import { ENCICLOPEDIA } from '../../constants/enciclopedia';
 
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 16,
     paddingBottom: 16,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#065f46',
   },
   backButton: { padding: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 16 },
   headerTitle: { fontSize: 24, fontWeight: '800', color: '#fff', flex: 1 },

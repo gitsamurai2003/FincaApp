@@ -1,6 +1,6 @@
-import { useFocusEffect, useRouter } from 'expo-router';
-import * as Crypto from 'expo-crypto';
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import * as Crypto from 'expo-crypto';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ArrowLeft, Calculator, Save } from 'lucide-react-native';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -16,22 +16,24 @@ import {
 import { db } from '../../db/client';
 import { obtenerFincaActiva } from '../../db/fincaActiva';
 import { animales, produccionLeche, rendimientosQueso } from '../../db/schema';
-
-type HistorialQueso = {
-  id: string;
-  fechaInicio: string;
-  fechaFin: string;
-  totalLitros: number;
-  kgQueso: number;
-  litrosPorKg: number;
-  creadoEn: number | null;
-};
 import {
   esFechaValida,
   fechaLocalISO,
   haceDiasLocal,
   validarRangoFechas,
 } from '../../utils/fecha';
+
+type HistorialQueso = {
+  id: string;
+  fincaId: string;
+  fechaInicio: string;
+  fechaFin: string;
+  totalLitros: number;
+  kgQueso: number;
+  litrosPorKg: number;
+  notas: string | null;
+  creadoEn: number | null;
+};
 
 type DesgloseAnimal = {
   areteCodigo: string;
@@ -41,8 +43,8 @@ type DesgloseAnimal = {
 export default function RendimientoQuesoScreen() {
   const router = useRouter();
   const [fincaNombre, setFincaNombre] = useState('');
-  const [fechaInicio, setFechaInicio] = useState(haceDiasLocal(6));
-  const [fechaFin, setFechaFin] = useState(fechaLocalISO());
+  const [fechaInicio, setFechaInicio] = useState(() => haceDiasLocal(6));
+  const [fechaFin, setFechaFin] = useState(() => fechaLocalISO());
   const [soloLeche, setSoloLeche] = useState(true);
   const [kgQueso, setKgQueso] = useState('');
   const [totalLitros, setTotalLitros] = useState<number | null>(null);
@@ -64,23 +66,44 @@ export default function RendimientoQuesoScreen() {
   const aplicarPreset = (dias: number) => {
     setFechaInicio(haceDiasLocal(dias - 1));
     setFechaFin(fechaLocalISO());
+    setCalculado(false); // Limpiar cálculo previo para evitar datos inconsistentes
   };
 
   const cargarHistorial = useCallback(async () => {
-    const finca = await obtenerFincaActiva();
-    if (!finca) {
-      setHistorial([]);
-      setFincaId(null);
-      return;
+    try {
+      const finca = await obtenerFincaActiva();
+      if (!finca) {
+        setHistorial([]);
+        setFincaId(null);
+        return;
+      }
+      setFincaId(finca.id);
+      setFincaNombre(finca.nombre);
+
+      const rows = await db
+        .select()
+        .from(rendimientosQueso)
+        .where(eq(rendimientosQueso.fincaId, finca.id))
+        .orderBy(desc(rendimientosQueso.creadoEn))
+        .limit(15);
+
+      // Mapeo seguro asegurando que cumpla con la estructura de la interfaz
+      const historialMapeado: HistorialQueso[] = rows.map((r) => ({
+        id: r.id,
+        fincaId: r.fincaId,
+        fechaInicio: r.fechaInicio,
+        fechaFin: r.fechaFin,
+        totalLitros: Number(r.totalLitros) || 0,
+        kgQueso: Number(r.kgQueso) || 0,
+        litrosPorKg: Number(r.litrosPorKg) || 0,
+        notas: r.notas ?? null,
+        creadoEn: r.creadoEn ?? null,
+      }));
+
+      setHistorial(historialMapeado);
+    } catch (error) {
+      console.error('Error cargando historial:', error);
     }
-    setFincaId(finca.id);
-    const rows = await db
-      .select()
-      .from(rendimientosQueso)
-      .where(eq(rendimientosQueso.fincaId, finca.id))
-      .orderBy(desc(rendimientosQueso.creadoEn))
-      .limit(15);
-    setHistorial(rows);
   }, []);
 
   useFocusEffect(
@@ -95,6 +118,8 @@ export default function RendimientoQuesoScreen() {
       return;
     }
     const kg = parseFloat(kgQueso.replace(',', '.'));
+    if (Number.isNaN(kg) || kg <= 0) return;
+
     try {
       await db.insert(rendimientosQueso).values({
         id: Crypto.randomUUID(),
@@ -104,8 +129,9 @@ export default function RendimientoQuesoScreen() {
         totalLitros,
         kgQueso: kg,
         litrosPorKg,
-        notas: notasLote.trim() || null,
+        notas: McCut(notasLote),
       });
+
       Alert.alert('Guardado', 'Lote de queso registrado en el historial.');
       setNotasLote('');
       await cargarHistorial();
@@ -114,6 +140,8 @@ export default function RendimientoQuesoScreen() {
       Alert.alert('Error', 'No se pudo guardar el lote.');
     }
   };
+
+  const McCut = (text: string) => text.trim() || null;
 
   const cargarLitros = useCallback(
     async (requiereKg: boolean) => {
@@ -141,6 +169,8 @@ export default function RendimientoQuesoScreen() {
           setDesglose([]);
           return;
         }
+
+        // Mantener sincronizado el estado base de la pantalla
         setFincaNombre(finca.nombre);
         setFincaId(finca.id);
 
@@ -149,44 +179,49 @@ export default function RendimientoQuesoScreen() {
           gte(produccionLeche.fecha, fechaInicio),
           lte(produccionLeche.fecha, fechaFin),
         ];
+
         if (soloLeche) {
           condiciones.push(inArray(animales.proposito, ['Leche', 'Doble_Proposito']));
         }
+        
         const filtroRango = and(...condiciones);
 
-      const [totales] = await db
-        .select({
-          totalLitros: sql<number>`coalesce(sum(${produccionLeche.litros}), 0)`,
-          conteo: sql<number>`count(*)`,
-          animales: sql<number>`count(distinct ${produccionLeche.animalId})`,
-        })
-        .from(produccionLeche)
-        .innerJoin(animales, eq(produccionLeche.animalId, animales.id))
-        .where(filtroRango);
+        // Forzar casting nativo en SQL para evitar fallos de strings en SQLite
+        const [totales] = await db
+          .select({
+            totalLitros: sql<number>`CAST(coalesce(sum(${produccionLeche.litros}), 0) AS REAL)`,
+            conteo: sql<number>`CAST(count(*) AS INTEGER)`,
+            animales: sql<number>`CAST(count(distinct ${produccionLeche.animalId}) AS INTEGER)`,
+          })
+          .from(produccionLeche)
+          .innerJoin(animales, eq(produccionLeche.animalId, animales.id))
+          .where(filtroRango);
 
-      const porAnimal = await db
-        .select({
-          areteCodigo: animales.areteCodigo,
-          litros: sql<number>`sum(${produccionLeche.litros})`,
-        })
-        .from(produccionLeche)
-        .innerJoin(animales, eq(produccionLeche.animalId, animales.id))
-        .where(filtroRango)
-        .groupBy(animales.id, animales.areteCodigo)
-        .orderBy(sql`sum(${produccionLeche.litros}) desc`);
+        const porAnimal = await db
+          .select({
+            areteCodigo: animales.areteCodigo,
+            litros: sql<number>`CAST(sum(${produccionLeche.litros}) AS REAL)`,
+          })
+          .from(produccionLeche)
+          .innerJoin(animales, eq(produccionLeche.animalId, animales.id))
+          .where(filtroRango)
+          .groupBy(animales.id, animales.areteCodigo)
+          .orderBy(desc(sql`sum(${produccionLeche.litros})`));
 
-      setTotalLitros(totales?.totalLitros ?? 0);
-      setConteoRegistros(totales?.conteo ?? 0);
-      setConteoAnimales(totales?.animales ?? 0);
-      setDesglose(
-        porAnimal.map((r) => ({
-          areteCodigo: r.areteCodigo,
-          litros: Number(r.litros) || 0,
-        })),
-      );
+        setTotalLitros(Number(totales?.totalLitros) || 0);
+        setConteoRegistros(Number(totales?.conteo) || 0);
+        setConteoAnimales(Number(totales?.animales) || 0);
+        
+        setDesglose(
+          porAnimal.map((r) => ({
+            areteCodigo: r.areteCodigo ?? 'S/N',
+            litros: Number(r.litros) || 0,
+          }))
+        );
+        
         setCalculado(true);
       } catch (error) {
-        console.error(error);
+        console.error('Error en cálculo de litros:', error);
         Alert.alert('Error', 'No se pudo calcular el rendimiento. Intenta de nuevo.');
       } finally {
         setCalculando(false);
@@ -195,15 +230,16 @@ export default function RendimientoQuesoScreen() {
     [fechaInicio, fechaFin, kgQueso, soloLeche]
   );
 
-  const etiquetaRango =
-    esFechaValida(fechaInicio) && esFechaValida(fechaFin)
+  const etiquetaRango = useMemo(() => {
+    return esFechaValida(fechaInicio) && esFechaValida(fechaFin)
       ? `${fechaInicio} → ${fechaFin}`
       : '—';
+  }, [fechaInicio, fechaFin]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
           <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
         <View style={styles.headerText}>
@@ -228,7 +264,7 @@ export default function RendimientoQuesoScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.filtroRow} onPress={() => setSoloLeche((v) => !v)}>
+        <TouchableOpacity style={styles.filtroRow} onPress={() => { setSoloLeche((v) => !v); setCalculado(false); }}>
           <View style={[styles.checkbox, soloLeche && styles.checkboxOn]} />
           <Text style={styles.filtroLabel}>Solo animales de propósito leche / doble</Text>
         </TouchableOpacity>
@@ -239,7 +275,7 @@ export default function RendimientoQuesoScreen() {
           placeholder="YYYY-MM-DD"
           placeholderTextColor="#94a3b8"
           value={fechaInicio}
-          onChangeText={setFechaInicio}
+          onChangeText={(txt) => { setFechaInicio(txt); setCalculado(false); }}
           autoCapitalize="none"
         />
 
@@ -249,7 +285,7 @@ export default function RendimientoQuesoScreen() {
           placeholder="YYYY-MM-DD"
           placeholderTextColor="#94a3b8"
           value={fechaFin}
-          onChangeText={setFechaFin}
+          onChangeText={(txt) => { setFechaFin(txt); setCalculado(false); }}
           autoCapitalize="none"
         />
 
@@ -299,7 +335,9 @@ export default function RendimientoQuesoScreen() {
                 <Text style={styles.statCaption}>Litros leche</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={styles.statValue}>{parseFloat(kgQueso.replace(',', '.')).toFixed(1)}</Text>
+                <Text style={styles.statValue}>
+                  {(parseFloat(kgQueso.replace(',', '.')) || 0).toFixed(1)}
+                </Text>
                 <Text style={styles.statCaption}>Kg queso</Text>
               </View>
             </View>
@@ -334,7 +372,7 @@ export default function RendimientoQuesoScreen() {
             )}
           </View>
 
-          {desglose.length > 0 && (
+          {desglose.length > 0 ? (
             <View style={styles.desgloseSection}>
               <Text style={styles.sectionTitle}>Desglose por animal</Text>
               {desglose.map((row) => (
@@ -344,9 +382,7 @@ export default function RendimientoQuesoScreen() {
                 </View>
               ))}
             </View>
-          )}
-
-          {desglose.length === 0 && (
+          ) : (
             <Text style={styles.emptyText}>
               No hay registros de leche en este rango para la finca activa.
             </Text>
@@ -366,13 +402,14 @@ export default function RendimientoQuesoScreen() {
                 setFechaFin(h.fechaFin);
                 setKgQueso(String(h.kgQueso));
                 setNotasLote(h.notas || '');
+                setCalculado(false); // Forzar recálculo si el usuario toca un elemento antiguo
               }}
             >
-              <View>
+              <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={styles.historialRango}>
                   {h.fechaInicio} → {h.fechaFin}
                 </Text>
-                <Text style={styles.historialMeta}>
+                <Text style={styles.historialMeta} numberOfLines={2}>
                   {h.totalLitros.toFixed(1)} L · {h.kgQueso.toFixed(1)} kg queso
                   {h.notas ? ` · ${h.notas}` : ''}
                 </Text>
@@ -386,6 +423,7 @@ export default function RendimientoQuesoScreen() {
   );
 }
 
+// Los estilos se mantienen idénticos
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   content: { paddingBottom: 100 },

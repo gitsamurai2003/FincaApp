@@ -1,8 +1,9 @@
+// app/(tabs)/registrar-sanidad.tsx
+import { and, eq, like } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react-native';
-import React, { useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { ArrowLeft, CheckCircle, Search, Zap } from 'lucide-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -17,9 +18,10 @@ import {
 import { buscarAnimalPorArete } from '../../db/buscarAnimal';
 import { db } from '../../db/client';
 import { obtenerFincaActiva } from '../../db/fincaActiva';
-import { historialMedico } from '../../db/schema';
+import { animales, historialMedico } from '../../db/schema';
 import { fechaLocalISO } from '../../utils/fecha';
 
+// ── Tipos ──────────────────────────────────────────────────────────────────────
 const TIPOS = [
   'Vacunacion_Obligatoria',
   'Tratamiento_Enfermedad',
@@ -27,16 +29,18 @@ const TIPOS = [
   'Vitamina',
 ] as const;
 
+type Sugerencia = { id: string; areteCodigo: string; nombre: string | null; categoria: string };
+
+// ── Componente ─────────────────────────────────────────────────────────────────
 export default function RegistrarSanidadScreen() {
   const router = useRouter();
   const { arete: areteParam } = useLocalSearchParams<{ arete?: string }>();
-  const [arete, setArete] = useState('');
+  const areteInputRef = useRef<TextInput>(null);
 
-  useEffect(() => {
-    if (typeof areteParam === 'string' && areteParam.trim()) {
-      setArete(areteParam.trim());
-    }
-  }, [areteParam]);
+  // ── Form State ────────────────────────────────────────────────────────────
+  const [arete, setArete] = useState('');
+  const [animalEncontrado, setAnimalEncontrado] = useState<Sugerencia | null>(null);
+  const [sugerencias, setSugerencias] = useState<Sugerencia[]>([]);
   const [tipo, setTipo] = useState<(typeof TIPOS)[number]>('Vacunacion_Obligatoria');
   const [medicamento, setMedicamento] = useState('');
   const [dosis, setDosis] = useState('');
@@ -45,11 +49,79 @@ export default function RegistrarSanidadScreen() {
   const [retiroLeche, setRetiroLeche] = useState('0');
   const [retiroCarne, setRetiroCarne] = useState('0');
   const [notas, setNotas] = useState('');
+  
   const [guardando, setGuardando] = useState(false);
+  const [modoRapido, setModoRapido] = useState(false); // Persistencia para trabajo en lote
+  const [guardadosHoy, setGuardadosHoy] = useState(0);
+  const [fincaId, setFincaId] = useState<string | null>(null);
 
+  // ── Inicialización ─────────────────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const finca = await obtenerFincaActiva();
+        if (finca) setFincaId(finca.id);
+      })();
+    }, [])
+  );
+
+  useEffect(() => {
+    if (typeof areteParam === 'string' && areteParam.trim()) {
+      setArete(areteParam.trim());
+      buscarPorArete(areteParam.trim());
+    }
+  }, [areteParam]);
+
+  // ── Autocompletado de Aretes ───────────────────────────────────────────────
+  const buscarPorArete = useCallback(
+    async (texto: string) => {
+      if (!fincaId || texto.trim().length < 1) {
+        setSugerencias([]);
+        setAnimalEncontrado(null);
+        return;
+      }
+      const upper = texto.trim().toUpperCase();
+      
+      // Match Exacto
+      const exacto = await db
+        .select({ id: animales.id, areteCodigo: animales.areteCodigo, nombre: animales.nombre, categoria: animales.categoria })
+        .from(animales)
+        .where(and(eq(animales.fincaId, fincaId), eq(animales.areteCodigo, upper)))
+        .limit(1);
+
+      if (exacto.length > 0) {
+        setAnimalEncontrado(exacto[0]);
+        setSugerencias([]);
+        return;
+      }
+      setAnimalEncontrado(null);
+
+      // Match Parcial
+      const parcial = await db
+        .select({ id: animales.id, areteCodigo: animales.areteCodigo, nombre: animales.nombre, categoria: animales.categoria })
+        .from(animales)
+        .where(and(eq(animales.fincaId, fincaId), like(animales.areteCodigo, `${upper}%`)))
+        .limit(8);
+      setSugerencias(parcial);
+    },
+    [fincaId]
+  );
+
+  const onChangeArete = (text: string) => {
+    setArete(text.toUpperCase());
+    buscarPorArete(text);
+  };
+
+  const seleccionarSugerencia = (s: Sugerencia) => {
+    setArete(s.areteCodigo);
+    setAnimalEncontrado(s);
+    setSugerencias([]);
+  };
+
+  // ── Guardar Registro ───────────────────────────────────────────────────────
   const handleGuardar = async () => {
     if (!arete.trim() || !medicamento.trim()) {
-      Alert.alert('Datos requeridos', 'Arete y medicamento son obligatorios.');
+      Alert.alert('Datos requeridos', 'El arete y el medicamento son obligatorios.');
       return;
     }
     const dLeche = parseInt(retiroLeche, 10) || 0;
@@ -62,7 +134,8 @@ export default function RegistrarSanidadScreen() {
         Alert.alert('Sin finca activa', 'Selecciona una finca en Inicio.');
         return;
       }
-      const animal = await buscarAnimalPorArete(finca.id, arete);
+      
+      const animal = animalEncontrado ?? await buscarAnimalPorArete(finca.id, arete);
       if (!animal) {
         Alert.alert('No encontrado', `Arete ${arete.toUpperCase()} no está en esta finca.`);
         return;
@@ -81,32 +154,63 @@ export default function RegistrarSanidadScreen() {
         notas: notas.trim() || null,
       });
 
-      Alert.alert('Guardado', 'Tratamiento registrado.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      setGuardadosHoy((n) => n + 1);
+
+      if (modoRapido) {
+        // En lote (ej. Vacunación general), mantenemos el fármaco, dosis y días de retiro
+        setArete('');
+        setAnimalEncontrado(null);
+        setSugerencias([]);
+        setNotas('');
+        if (tipo !== 'Tratamiento_Enfermedad') {
+          setDiagnostico(''); // Limpiar diagnóstico si no es enfermedad
+        }
+        
+        setTimeout(() => {
+          areteInputRef.current?.focus();
+        }, 100);
+      } else {
+        Alert.alert('Guardado', 'Tratamiento sanitario registrado con éxito.', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      }
     } catch (e) {
       console.error(e);
-      Alert.alert('Error', 'No se pudo guardar. Verifica que la base de datos esté actualizada.');
+      Alert.alert('Error', 'No se pudo guardar el registro sanitario.');
     } finally {
       setGuardando(false);
     }
   };
 
+  // ── UI ─────────────────────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
           <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Registro sanitario</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Registro Sanitario</Text>
+          {modoRapido && guardadosHoy > 0 && (
+            <Text style={styles.headerBadge}>⚡ {guardadosHoy} aplicados en lote</Text>
+          )}
+        </View>
+        
+        {/* Toggle Modo Rápido */}
+        <TouchableOpacity
+          style={[styles.modoRapidoBtn, modoRapido && styles.modoRapidoBtnOn]}
+          onPress={() => setModoRapido((v) => !v)}
+        >
+          <Zap size={14} color={modoRapido ? '#fff' : '#dc2626'} />
+          <Text style={[styles.modoRapidoText, modoRapido && { color: '#fff' }]}>Lote</Text>
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        <Text style={styles.label}>Arete</Text>
-        <TextInput style={styles.input} value={arete} onChangeText={setArete} autoCapitalize="characters" />
-
-        <Text style={styles.label}>Tipo de manejo</Text>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        
+        {/* Tipo de Manejo */}
+        <Text style={styles.label}>Tipo de manejo sanitario</Text>
         <View style={styles.chipRow}>
           {TIPOS.map((t) => (
             <TouchableOpacity
@@ -114,45 +218,150 @@ export default function RegistrarSanidadScreen() {
               style={[styles.chip, tipo === t && styles.chipOn]}
               onPress={() => setTipo(t)}
             >
-              <Text style={[styles.chipText, tipo === t && styles.chipTextOn]}>{t.replace(/_/g, ' ')}</Text>
+              <Text style={[styles.chipText, tipo === t && styles.chipTextOn]}>
+                {t.replace(/_/g, ' ')}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <Text style={styles.label}>Medicamento</Text>
-        <TextInput style={styles.input} value={medicamento} onChangeText={setMedicamento} />
+        {/* Búsqueda de Arete con Autocompletado */}
+        <Text style={styles.label}>Arete del animal</Text>
+        <View style={styles.areteWrapper}>
+          <Search color="#94a3b8" size={18} style={{ marginRight: 8 }} />
+          <TextInput
+            ref={areteInputRef}
+            style={styles.areteInput}
+            value={arete}
+            onChangeText={onChangeArete}
+            autoCapitalize="characters"
+            placeholder="Buscar por arete..."
+            placeholderTextColor="#94a3b8"
+          />
+          {animalEncontrado && <CheckCircle color="#065f46" size={20} />}
+        </View>
 
-        <Text style={styles.label}>Dosis (opcional)</Text>
-        <TextInput style={styles.input} value={dosis} onChangeText={setDosis} />
+        {/* Dropdown de Sugerencias */}
+        {sugerencias.length > 0 && (
+          <View style={styles.dropdown}>
+            {sugerencias.map((s) => (
+              <TouchableOpacity
+                key={s.id}
+                style={styles.dropdownItem}
+                onPress={() => seleccionarSugerencia(s)}
+              >
+                <Text style={styles.dropdownArete}>#{s.areteCodigo}</Text>
+                <Text style={styles.dropdownMeta}>{s.nombre || s.categoria.replace(/_/g, ' ')}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        <Text style={styles.label}>Diagnóstico (opcional)</Text>
-        <TextInput style={styles.input} value={diagnostico} onChangeText={setDiagnostico} />
+        {/* Info del Animal Seleccionado */}
+        {animalEncontrado && (
+          <View style={styles.animalCard}>
+            <Text style={styles.animalCardText}>
+              ✓ {animalEncontrado.areteCodigo}
+              {animalEncontrado.nombre ? ` — ${animalEncontrado.nombre}` : ''}
+              {'  ·  '}{animalEncontrado.categoria.replace(/_/g, ' ')}
+            </Text>
+          </View>
+        )}
+
+        {/* Medicamento y Dosis */}
+        <Text style={styles.label}>Medicamento / Biológico</Text>
+        <TextInput 
+          style={styles.input} 
+          value={medicamento} 
+          onChangeText={setMedicamento} 
+          placeholder="Ej: Ivermectina, Vacuna Fiebre Aftosa"
+        />
+
+        <Text style={styles.label}>Dosis</Text>
+        <TextInput 
+          style={styles.input} 
+          value={dosis} 
+          onChangeText={setDosis} 
+          placeholder="Ej: 5 ml, 2 cc (Opcional)"
+        />
+
+        {/* Diagnóstico (Relevante para tratamientos médicos) */}
+        {tipo === 'Tratamiento_Enfermedad' && (
+          <>
+            <Text style={styles.label}>Diagnóstico Clínico</Text>
+            <TextInput 
+              style={styles.input} 
+              value={diagnostico} 
+              onChangeText={setDiagnostico} 
+              placeholder="Ej: Mastitis, Pododermatitis"
+            />
+          </>
+        )}
 
         <Text style={styles.label}>Fecha de aplicación</Text>
-        <TextInput style={styles.input} value={fecha} onChangeText={setFecha} />
+        <TextInput style={styles.input} value={fecha} onChangeText={setFecha} placeholder="YYYY-MM-DD" />
 
+        {/* Tiempos de Retiro (Esencial para fincas lecheras) */}
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Retiro leche (días)</Text>
-            <TextInput style={styles.input} value={retiroLeche} onChangeText={setRetiroLeche} keyboardType="number-pad" />
+            <Text style={styles.label}>Retiro en Leche (días)</Text>
+            <TextInput 
+              style={styles.input} 
+              value={retiroLeche} 
+              onChangeText={setRetiroLeche} 
+              keyboardType="number-pad"
+              selectTextOnFocus
+            />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Retiro carne (días)</Text>
-            <TextInput style={styles.input} value={retiroCarne} onChangeText={setRetiroCarne} keyboardType="number-pad" />
+            <Text style={styles.label}>Retiro en Carne (días)</Text>
+            <TextInput 
+              style={styles.input} 
+              value={retiroCarne} 
+              onChangeText={setRetiroCarne} 
+              keyboardType="number-pad"
+              selectTextOnFocus
+            />
           </View>
         </View>
 
-        <Text style={styles.label}>Notas</Text>
-        <TextInput style={[styles.input, { height: 64 }]} value={notas} onChangeText={setNotas} multiline />
+        <Text style={styles.label}>Notas y observaciones</Text>
+        <TextInput 
+          style={[styles.input, { height: 70 }]} 
+          value={notas} 
+          onChangeText={setNotas} 
+          multiline 
+          placeholder="Lote del fármaco, fabricante o síntomas..."
+        />
 
-        <TouchableOpacity style={[styles.btn, guardando && styles.btnOff]} onPress={handleGuardar} disabled={guardando}>
-          <Text style={styles.btnText}>{guardando ? 'Guardando...' : 'Registrar tratamiento'}</Text>
+        {/* Hint del Modo Lote */}
+        {modoRapido && (
+          <View style={styles.hintCard}>
+            <Zap size={14} color="#dc2626" />
+            <Text style={styles.hintText}>
+              Modo lote activo: Se preservará el medicamento, dosis y periodos de retiro para registrar rápidamente al siguiente animal.
+            </Text>
+          </View>
+        )}
+
+        {/* Botón de Guardado */}
+        <TouchableOpacity 
+          style={[styles.btn, guardando && styles.btnOff]} 
+          onPress={handleGuardar} 
+          disabled={guardando}
+        >
+          <Text style={styles.btnText}>
+            {guardando ? 'Guardando...' : modoRapido ? '⚡ Registrar y Continuar' : 'Registrar Tratamiento'}
+          </Text>
         </TouchableOpacity>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+// ── Estilos Mejorados ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
@@ -165,11 +374,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderColor: '#e2e8f0',
+    gap: 10,
   },
   backButton: { padding: 8, borderRadius: 12, backgroundColor: '#f1f5f9' },
-  headerTitle: { fontSize: 18, fontWeight: '700' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#1e293b' },
+  headerBadge: { fontSize: 11, color: '#dc2626', fontWeight: '600', marginTop: 2 },
+  modoRapidoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+  },
+  modoRapidoBtnOn: { backgroundColor: '#dc2626', borderColor: '#dc2626' },
+  modoRapidoText: { fontSize: 12, fontWeight: '700', color: '#dc2626' },
   content: { padding: 20 },
-  label: { fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, marginTop: 12 },
+  label: { fontSize: 11, fontWeight: '700', color: '#475569', marginBottom: 6, marginTop: 14, textTransform: 'uppercase', letterSpacing: 0.5 },
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -177,13 +401,70 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     height: 48,
     paddingHorizontal: 14,
+    color: '#1e293b',
+    fontSize: 14,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
   chipOn: { backgroundColor: '#dc2626', borderColor: '#dc2626' },
-  chipText: { fontSize: 11, fontWeight: '600', color: '#475569' },
+  chipText: { fontSize: 12, fontWeight: '600', color: '#475569' },
   chipTextOn: { color: '#fff' },
-  btn: { backgroundColor: '#dc2626', height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 24, marginBottom: 40 },
+  areteWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  areteInput: { flex: 1, fontSize: 14, color: '#1e293b' },
+  dropdown: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    marginTop: 4,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  dropdownArete: { fontWeight: '700', color: '#1e293b', fontSize: 14 },
+  dropdownMeta: { color: '#64748b', fontSize: 12 },
+  animalCard: {
+    marginTop: 6,
+    padding: 10,
+    backgroundColor: '#ecfdf5',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  animalCardText: { color: '#065f46', fontWeight: '600', fontSize: 13 },
+  hintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+  },
+  hintText: { flex: 1, fontSize: 12, color: '#dc2626', lineHeight: 16 },
+  btn: { backgroundColor: '#dc2626', height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
   btnOff: { opacity: 0.6 },
-  btnText: { color: '#fff', fontWeight: '700' },
+  btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

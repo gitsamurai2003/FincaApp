@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
   },
   iconBg: { padding: 10, borderRadius: 12, backgroundColor: '#f1f5f9' },
   headerTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
-  sub: { fontSize: 13, color: '#64748b', fontWeight: '500', marginTop: 2 },
+  sub: { fontSize: 13, color: '#065f46', fontWeight: '500', marginTop: 2 },
   listContainer: { padding: 16 },
   card: {
     flexDirection: 'row',

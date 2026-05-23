@@ -1,8 +1,9 @@
-import { useFocusEffect, useRouter } from 'expo-router';
-import { ClipboardList, Database, LayoutGrid, PlusCircle } from 'lucide-react-native';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
+// Agrega 'Home' a tus importaciones existentes
+import { ClipboardList, Database, Home, LayoutGrid, PlusCircle } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
+import { seedDatabase } from '../../db/seed'; // Asegúrate de que la ruta relativa sea correcta
 // Conexión a la BD, Operadores y Esquemas
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
@@ -14,6 +15,7 @@ export default function HomeScreen() {
   
   // Estados para controlar los datos reales de la BD
   const [cargando, setCargando] = useState(true);
+  const [inyectando, setInyectando] = useState(false); // Estado para controlar el proceso del seed
   const [fincaActiva, setFincaActiva] = useState<{ id: string; nombre: string } | null>(null);
   const [totalAnimales, setTotalAnimales] = useState(0);
   const [litrosHoy, setLitrosHoy] = useState(0);
@@ -101,7 +103,7 @@ export default function HomeScreen() {
       if (fincaActiva) {
         opciones.unshift({
           text: `Editar: ${fincaActiva.nombre}`,
-          onPress: () => router.push('/editar-finca'),
+          onPress: async () => router.push('/editar-finca'),
         });
       }
 
@@ -132,27 +134,60 @@ export default function HomeScreen() {
     return arr;
   }
 
-  const navegarModulo = (ruta: string) => {
+const navegarModulo = (ruta: string) => {
     if (!fincaActiva) {
       Alert.alert("Finca Requerida", "Primero debes crear o seleccionar una Finca para gestionar datos.");
       return;
     }
-    router.push(ruta as any); 
+    // Modificado: Ahora envía la ruta como objeto incluyendo el parámetro 'origen'
+    router.push({ pathname: ruta as any, params: { origen: 'index' } }); 
   };
 
-  return (
+
+  // Función manejadora del script de seed
+  const ejecutarSeed = async () => {
+    try {
+      setInyectando(true);
+      await seedDatabase();
+      // Forzar recarga inmediata de la pantalla tras poblar la base de datos
+      await consultarDatosDeFinca();
+      Alert.alert("¡Éxito!", "Base de datos local limpia y repoblada con datos de prueba.");
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error de Seeding", "Revisa la consola del Metro Bundler para ver los detalles.");
+    } finally {
+      setInyectando(false);
+    }
+  };
+
+return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       
-      {/* HEADER DE BIENVENIDA */}
+      {/* DESACTIVAMOS EL HEADER DEL SISTEMA POR SI ACASO */}
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* HEADER DE BIENVENIDA INTERNO OPTIMIZADO */}
       <View style={styles.header}>
-        <Text style={styles.headerSubtitle}>Panel de Control</Text>
-        <Text style={styles.headerTitle}>
-          {fincaActiva ? fincaActiva.nombre : 'Finca Pro'}
-        </Text>
+        
+        {/* BLOQUE MODULAR: ÍCONO EN CONTENEDOR + TEXTOS */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={styles.iconBgTranslucido}>
+            <Home color="#ffffff" size={24} />
+          </View>
+          
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={styles.headerSubtitle}>Panel de Control</Text>
+            <Text style={styles.headerTitle}>
+              {fincaActiva ? fincaActiva.nombre : 'Finca Pro'}
+            </Text>
+          </View>
+        </View>
+        
+        {/* INDICADOR DE PROYECTO */}
         <View style={styles.badgeContainer}>
           <View style={styles.badgeDot} />
           <Text style={styles.badgeText}>
-            {fincaActiva ? 'Proyecto Activo Offline' : 'Sin Finca Seleccionada'}
+            {fincaActiva ? 'Proyecto Activo Seleccionado' : 'Sin Finca Seleccionada'}
           </Text>
         </View>
       </View>
@@ -228,6 +263,29 @@ export default function HomeScreen() {
               </View>
             </TouchableOpacity>
 
+            {/* BOTÓN EXCLUSIVO DE DESARROLLO (SEED DATABASE) */}
+            {__DEV__ && (
+              <TouchableOpacity 
+                style={[styles.fullWidthButton, styles.seedButton]}
+                onPress={ejecutarSeed}
+                disabled={inyectando}
+              >
+                <View style={styles.rowCentered}>
+                  {inyectando ? (
+                    <ActivityIndicator size="small" color="#b45309" style={{ marginRight: 12 }} />
+                  ) : (
+                    <Database color="#b45309" size={20} />
+                  )}
+                  <Text style={[styles.fullWidthButtonTitle, styles.seedButtonTitle]}>
+                    {inyectando ? 'Inyectando búfalas...' : 'Poblar Base de Datos (Seed)'}
+                  </Text>
+                </View>
+                <View style={styles.badgeSeed}>
+                  <Text style={styles.badgeSeedText}>DEV_DATA</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
           </View>
         )}
       </View>
@@ -239,18 +297,51 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
     backgroundColor: '#065f46',
-    paddingTop: 64, paddingBottom: 40, paddingHorizontal: 24,
-    borderBottomLeftRadius: 40, borderBottomRightRadius: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1, shadowRadius: 15, elevation: 5,
+    paddingTop: 60, // Ajustado a la misma altura de la biblioteca para homogeneidad
+    paddingBottom: 32, 
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 40, 
+    borderBottomRightRadius: 40,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1, 
+    shadowRadius: 15, 
+    elevation: 5,
   },
-  headerSubtitle: { color: '#a7f3d0', fontWeight: '700', fontSize: 16, textTransform: 'uppercase', letterSpacing: 1.5 },
-  headerTitle: { color: '#ffffff', fontSize: 30, fontWeight: '900', marginTop: 4 },
+  // Contenedor elegante para el ícono sobre fondos oscuros corporativos
+  iconBgTranslucido: {
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)', // Blanco translúcido sutil
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  headerSubtitle: { 
+    color: '#a7f3d0', 
+    fontWeight: '700', 
+    fontSize: 13, // Tamaño balanceado para actuar como etiqueta superior
+    textTransform: 'uppercase', 
+    letterSpacing: 1.5,
+    includeFontPadding: false,
+  },
+  headerTitle: { 
+    color: '#ffffff', 
+    fontSize: 26, // Ligeramente ajustado para encajar bien junto al ícono modular
+    fontWeight: '900', 
+    marginTop: 2,
+    includeFontPadding: false,
+  },
   badgeContainer: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 16,
-    backgroundColor: 'rgba(2, 45, 34, 0.5)', alignSelf: 'flex-start',
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999,
-    borderWidth: 1, borderColor: '#047857',
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginTop: 20, // Más espacio para respirar respecto al bloque del título superior
+    backgroundColor: 'rgba(2, 45, 34, 0.5)', 
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 9999,
+    borderWidth: 1, 
+    borderColor: '#047857',
   },
   badgeDot: { width: 8, height: 8, backgroundColor: '#34d399', borderRadius: 4, marginRight: 8 },
   badgeText: { color: '#d1fae5', fontSize: 12, fontWeight: '500' },
@@ -276,9 +367,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff', width: '100%', padding: 20, borderRadius: 24,
     borderWidth: 1, borderColor: '#f1f5f9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2,
+    marginBottom: 16,
   },
   rowCentered: { flexDirection: 'row', alignItems: 'center' },
   fullWidthButtonTitle: { color: '#475569', fontWeight: '700', fontSize: 14, marginLeft: 12 },
   badgeSqlite: { backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  badgeSqliteText: { color: '#059669', fontWeight: '700', fontSize: 10 }
+  badgeSqliteText: { color: '#059669', fontWeight: '700', fontSize: 10 },
+  
+  // Estilos agregados para el botón de Seed
+  seedButton: { borderColor: '#fef3c7', backgroundColor: '#fffdf5', marginTop: 4 },
+  seedButtonTitle: { color: '#92400e' },
+  badgeSeed: { backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  badgeSeedText: { color: '#d97706', fontWeight: '700', fontSize: 10 }
 });

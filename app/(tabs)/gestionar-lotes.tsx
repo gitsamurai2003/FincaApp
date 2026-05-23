@@ -2,10 +2,11 @@ import { eq } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ArrowLeft, MapPin, Plus, Trash2 } from 'lucide-react-native';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -31,6 +32,21 @@ export default function GestionarLotesScreen() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
+      useEffect(() => {
+        const backAction = () => {
+          // Redirige a registros en lugar de hacer el 'pop' normal
+          router.replace('/registros'); 
+          return true; // Esto le dice a React Native: "Yo me encargo, no hagas la acción por defecto"
+        };
+    
+        const backHandler = BackHandler.addEventListener(
+          'hardwareBackPress',
+          backAction
+        );
+    
+        return () => backHandler.remove();
+      }, []);
+      
   const cargarLotes = useCallback(async () => {
     try {
       setCargando(true);
@@ -117,7 +133,7 @@ export default function GestionarLotesScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
           <ArrowLeft color="#1e293b" size={24} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
