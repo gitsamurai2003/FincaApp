@@ -1,17 +1,18 @@
+// screens/CrearAnimalScreen.tsx
 import { eq } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ArrowLeft, Calendar, FileText, Hash, Scale, Tag, Users } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { db } from '../../db/client';
 import {
   CATEGORIAS_AGRUPADAS,
   type CategoriaAnimal,
   categoriaSugeridaPorEspecie,
 } from '../../constants/categoriasAnimal';
-import { areteExisteEnFinca } from '../../db/validarArete';
+import { db } from '../../db/client';
 import { animales, especies, fincas, lotes, razas } from '../../db/schema';
+import { areteExisteEnFinca } from '../../db/validarArete';
 import { fechaLocalISO } from '../../utils/fecha';
 
 interface EspecieDB {
@@ -32,7 +33,7 @@ interface LoteDB {
 
 export default function CrearAnimalScreen() {
   const router = useRouter();
-  
+ 
   const [listaEspecies, setListaEspecies] = useState<EspecieDB[]>([]);
   const [listaRazas, setListaRazas] = useState<RazaDB[]>([]);
   const [listaLotes, setListaLotes] = useState<LoteDB[]>([]);
@@ -51,7 +52,7 @@ export default function CrearAnimalScreen() {
   const [loteSeleccionado, setLoteSeleccionado] = useState<string | null>(null);
   const [madreId, setMadreId] = useState('');
   const [padreId, setPadreId] = useState('');
-  
+ 
   const [fincaActivaId, setFincaActivaId] = useState<string | null>(null);
   const [categoria, setCategoria] = useState<CategoriaAnimal>('Becerra');
   const [guardando, setGuardando] = useState(false);
@@ -90,25 +91,86 @@ export default function CrearAnimalScreen() {
     inicializarComponente();
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!fincaActivaId) return;
-      (async () => {
-        const dbLotes = await db.select().from(lotes).where(eq(lotes.fincaId, fincaActivaId));
-        setListaLotes(dbLotes);
-      })();
-    }, [fincaActivaId])
-  );
+// 1. Unificamos la carga inicial y el foco en una sola lógica limpia
+useFocusEffect(
+  useCallback(() => {
+    async function cargarDatosFincaYCatalogos() {
+      try {
+        // Traer finca activa
+        const fincaActiva = await db.select().from(fincas).where(eq(fincas.activa, 1)).limit(1);
+        if (fincaActiva.length === 0) {
+          Alert.alert('Atención', 'No hay ninguna finca activa seleccionada. Por favor activa una finca primero.');
+          router.back();
+          return;
+        }
+        
+        const fId = fincaActiva[0].id;
+        setFincaActivaId(fId);
 
-  useEffect(() => {
-    if (especieSeleccionada !== null) {
-      const filtradas = listaRazas.filter(r => r.especieId === especieSeleccionada);
-      setRazasFiltradas(filtradas);
-      setRazaSeleccionada(filtradas.length > 0 ? filtradas[0].id : null);
-      const esp = listaEspecies.find((e) => e.id === especieSeleccionada);
-      if (esp) setCategoria(categoriaSugeridaPorEspecie(esp.nombre, sexo));
+        // Consultas en paralelo a SQLite para máxima velocidad
+        const [dbEspecies, dbRazas, dbLotes] = await Promise.all([
+          db.select().from(especies),
+          db.select().from(razas),
+          db.select().from(lotes).where(eq(lotes.fincaId, fId))
+        ]);
+
+        setListaEspecies(dbEspecies);
+        setListaRazas(dbRazas);
+        setListaLotes(dbLotes);
+
+        // Inicializar especie por defecto SOLO si no se ha seleccionado una antes
+        if (dbEspecies.length > 0 && especieSeleccionada === null) {
+          const primerEspecieId = dbEspecies[0].id;
+          setEspecieSeleccionada(primerEspecieId);
+// Ejecutamos el primer filtrado directo aquí con los datos frescos de la DB
+// para evitar esperar al siguiente ciclo de render de React
+const filtradasIniciales = dbRazas.filter(r => Number(r.especieId) === Number(primerEspecieId));
+setRazasFiltradas(filtradasIniciales);
+
+if (filtradasIniciales.length > 0) {
+  setRazaSeleccionada(filtradasIniciales[0].id);
+}
+          
+          const sugerida = categoriaSugeridaPorEspecie(dbEspecies[0].nombre, sexo);
+          setCategoria(sugerida);
+        }
+      } catch (error) {
+        console.error(error);
+        Alert.alert('Error', 'No se pudieron recuperar los catálogos relacionales.');
+      } finally {
+        setCargandoCatalogos(false);
+      }
     }
-  }, [especieSeleccionada, listaRazas, listaEspecies, sexo]);
+
+    cargarDatosFincaYCatalogos();
+  }, [sexo]) // El foco reacciona correctamente si cambia el sexo para re-sugerir
+);
+
+// 2. El useEffect de filtrado ahora SOLO reacciona cuando el usuario CAMBIA la especie manualmente
+useEffect(() => {
+  if (especieSeleccionada !== null && listaRazas.length > 0) {
+    const filtradas = listaRazas.filter(r => Number(r.especieId) === Number(especieSeleccionada));
+    setRazasFiltradas(filtradas);
+    
+    // Evitamos pisar la raza seleccionada si esta ya pertenece al grupo filtrado
+    const yaEstaSeleccionadaValida = filtradas.some(r => r.id === razaSeleccionada);
+    if (!yaEstaSeleccionadaValida) {
+      setRazaSeleccionada(filtradas.length > 0 ? filtradas[0].id : null);
+    }
+    
+    const esp = listaEspecies.find((e) => Number(e.id) === Number(especieSeleccionada));
+    if (esp) {
+      const sugerida = categoriaSugeridaPorEspecie(esp.nombre, sexo);
+      setCategoria(sugerida);
+    }
+  }
+}, [especieSeleccionada, listaRazas]); 
+
+  // Obtener el nombre de la especie actualmente seleccionada
+  const obtenerNombreEspecieActual = (): string => {
+    const esp = listaEspecies.find((e) => e.id === especieSeleccionada);
+    return esp ? esp.nombre.toLowerCase() : '';
+  };
 
   const validarAretesPadres = async (): Promise<boolean> => {
     if (!fincaActivaId) return false;
@@ -207,9 +269,35 @@ export default function CrearAnimalScreen() {
     );
   }
 
+// === SOLUCIÓN DEFINITIVA Y ROBUSTA AL FILTRADO ===
+  const especieActualKey = obtenerNombreEspecieActual(); // Ej: "bovino", "bufalino", "ovino"
+
+  const gruposCategoriasFiltrados = Object.entries(CATEGORIAS_AGRUPADAS).filter(([grupo]) => {
+    // 1. Pasamos a minúsculas y limpiamos acentos/emojis raros dejando solo letras
+    // "🐄 Bovinos" -> "bovinos", "🐑 Ovinos/Caprinos" -> "ovinos caprinos"
+    const grupoLimpio = grupo
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Quita acentos si los hay
+      .replace(/[^a-z\s]/g, ' ');      // Deja solo letras y espacios (remueve emojis y barras)
+
+    // 2. Si la especie actual es "ovino", usamos un comportamiento especial para evitar que caiga en "bovino"
+    if (especieActualKey === 'ovino') {
+      return grupoLimpio.includes('ovino') && !grupoLimpio.includes('bovino');
+    }
+
+    // 3. Para "bovino", nos aseguramos de que no se confunda con "ovino" midiendo límites
+    if (especieActualKey === 'bovino') {
+      return grupoLimpio.includes('bovino');
+    }
+
+    // 4. Para las demás especies (bufalino, equino, porcino), un .includes básico funciona perfecto
+    return grupoLimpio.includes(especieActualKey);
+  });
+
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
       <View style={styles.header}>
@@ -221,7 +309,7 @@ export default function CrearAnimalScreen() {
       </View>
 
       <ScrollView style={styles.scrollContent} contentContainerStyle={{ paddingBottom: 40 }}>
-        
+       
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Código del Arete / Identificación</Text>
           <View style={styles.inputWrapper}>
@@ -307,24 +395,28 @@ export default function CrearAnimalScreen() {
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Categoría zootécnica</Text>
-          {Object.entries(CATEGORIAS_AGRUPADAS).map(([grupo, opciones]) => (
-            <View key={grupo} style={{ marginBottom: 10 }}>
-              <Text style={styles.groupLabel}>{grupo}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorScroll}>
-                {opciones.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.chip, categoria === cat && styles.chipActive]}
-                    onPress={() => setCategoria(cat)}
-                  >
-                    <Text style={[styles.chipText, categoria === cat && styles.chipTextActive]}>
-                      {cat.replace('_', ' ')}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          ))}
+          {gruposCategoriasFiltrados.length > 0 ? (
+            gruposCategoriasFiltrados.map(([grupo, opciones]) => (
+              <View key={grupo} style={{ marginBottom: 10 }}>
+                <Text style={styles.groupLabel}>{grupo.replace('_', ' & ')}</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorScroll}>
+                  {opciones.map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.chip, categoria === cat && styles.chipActive]}
+                      onPress={() => setCategoria(cat)}
+                    >
+                      <Text style={[styles.chipText, categoria === cat && styles.chipTextActive]}>
+                        {cat.replace('_', ' ')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noDataText}>Selecciona una especie para ver sus categorías.</Text>
+          )}
         </View>
 
         <View style={styles.inputGroup}>
@@ -396,14 +488,14 @@ export default function CrearAnimalScreen() {
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Sexo</Text>
           <View style={styles.selectorContainer}>
-            <TouchableOpacity 
-              style={[styles.selectorOption, sexo === 'F' && styles.selectorActive]} 
+            <TouchableOpacity
+              style={[styles.selectorOption, sexo === 'F' && styles.selectorActive]}
               onPress={() => setSexo('F')}
             >
               <Text style={[styles.selectorText, sexo === 'F' && styles.selectorTextActive]}>Hembra</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.selectorOption, sexo === 'M' && styles.selectorActive]} 
+            <TouchableOpacity
+              style={[styles.selectorOption, sexo === 'M' && styles.selectorActive]}
               onPress={() => setSexo('M')}
             >
               <Text style={[styles.selectorText, sexo === 'M' && styles.selectorTextActive]}>Macho</Text>
@@ -456,8 +548,8 @@ export default function CrearAnimalScreen() {
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={[styles.btnGuardar, guardando && styles.btnDeshabilitado]} 
+        <TouchableOpacity
+          style={[styles.btnGuardar, guardando && styles.btnDeshabilitado]}
           onPress={handleGuardar}
           disabled={guardando}
         >
@@ -473,24 +565,24 @@ export default function CrearAnimalScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60, 
-    paddingBottom: 16, 
+    paddingTop: 60,
+    paddingBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: '#ffffff', 
-    borderBottomWidth: 1, 
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
     borderColor: '#e2e8f0',
   },
-  backButton: { 
-    padding: 8, 
-    borderRadius: 12, 
-    backgroundColor: '#f1f5f9', 
-    width: 40, 
-    height: 40, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  backButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
   spacer: { width: 40 },
@@ -498,12 +590,12 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 20 },
   label: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   inputWrapper: {
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderWidth: 1, 
-    borderColor: '#cbd5e1', 
-    borderRadius: 16, 
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 16,
     paddingHorizontal: 14,
   },
   inputIcon: { marginRight: 10 },
@@ -525,16 +617,16 @@ const styles = StyleSheet.create({
   selectorText: { fontSize: 15, fontWeight: '600', color: '#475569' },
   selectorTextActive: { color: '#ffffff' },
   btnGuardar: {
-    backgroundColor: '#065f46', 
-    height: 54, 
+    backgroundColor: '#065f46',
+    height: 54,
     borderRadius: 16,
-    justifyContent: 'center', 
-    alignItems: 'center', 
+    justifyContent: 'center',
+    alignItems: 'center',
     marginTop: 20,
-    shadowColor: '#065f46', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.2, 
-    shadowRadius: 5, 
+    shadowColor: '#065f46',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
     elevation: 3,
   },
   btnDeshabilitado: { backgroundColor: '#a7f3d0' },

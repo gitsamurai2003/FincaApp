@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle, Search, Zap } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -55,6 +56,21 @@ export default function RegistrarSanidadScreen() {
   const [guardadosHoy, setGuardadosHoy] = useState(0);
   const [fincaId, setFincaId] = useState<string | null>(null);
 
+  useEffect(() => {
+  const backAction = () => {
+    // Aquí defines a qué pantalla quieres que regrese
+    router.replace('/registros'); 
+    return true; // Importante: 'true' evita que el app se cierre o haga el comportamiento por defecto
+  };
+
+  const backHandler = BackHandler.addEventListener(
+    'hardwareBackPress',
+    backAction
+  );
+
+  // Esto limpia el evento al salir de la pantalla para no causar errores en otras partes
+  return () => backHandler.remove();
+}, []);
   // ── Inicialización ─────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {

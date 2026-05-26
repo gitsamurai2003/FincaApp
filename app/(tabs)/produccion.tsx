@@ -93,8 +93,8 @@ export default function ProduccionScreen() {
       cargarDatosPantalla();
     }, [cargarDatosPantalla])
   );
-
-  const handleGuardarRegistro = async () => {
+  
+const handleGuardarRegistro = async () => {
     if (!fincaId) {
       Alert.alert('Finca No Detectada', 'Debes activar una finca desde los ajustes antes de inyectar datos.');
       return;
@@ -132,6 +132,16 @@ export default function ProduccionScreen() {
       const animal = animalExiste[0];
       const fechaHoy = fechaLocalISO();
 
+      // NUEVA VALIDACIÓN: Impedir litros a machos en la pestaña de leche
+      if (tabActiva === 'leche' && animal.sexo === 'M') {
+        Alert.alert(
+          'Restricción de control',
+          `El animal #${animal.areteCodigo} está registrado como MACHO ('M') en el sistema. No se puede registrar producción de leche de un macho.`
+        );
+        setGuardando(false);
+        return; // Detiene la inserción por completo
+      }
+
       // 2. Insertar según la pestaña activa
       if (tabActiva === 'leche') {
         const turnoCodigo = turnoLecheToCodigo(turno);
@@ -157,7 +167,7 @@ export default function ProduccionScreen() {
         }
 
         await db.insert(produccionLeche).values({
-          id: await getRandomUUID(), // Inyectado usando expo-crypto si lo requieres, o autogenerado según tu app
+          id: await getRandomUUID(),
           animalId: animal.id,
           fecha: fechaHoy,
           litros: valorNumerico,
@@ -172,7 +182,7 @@ export default function ProduccionScreen() {
           peso: valorNumerico,
           fechaPesaje: fechaHoy,
           condicionCorporal: isNaN(ccNum) ? null : ccNum,
-          notes: notas.trim() || null, // Mapeado a 'notes' por la compatibilidad de tu schema
+          notes: notas.trim() || null,
         });
       }
 

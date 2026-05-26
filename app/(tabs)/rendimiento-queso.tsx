@@ -1,7 +1,9 @@
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
+import * as Print from 'expo-print';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ArrowLeft, Calculator, Save } from 'lucide-react-native';
+import * as Sharing from 'expo-sharing';
+import { ArrowLeft, Calculator, FileText, Save, X } from 'lucide-react-native';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -56,6 +58,7 @@ export default function RendimientoQuesoScreen() {
   const [fincaId, setFincaId] = useState<string | null>(null);
   const [historial, setHistorial] = useState<HistorialQueso[]>([]);
   const [notasLote, setNotasLote] = useState('');
+  const [editingLoteId, setEditingLoteId] = useState<string | null>(null);
 
   const litrosPorKg = useMemo(() => {
     const kg = parseFloat(kgQueso.replace(',', '.'));
@@ -66,7 +69,8 @@ export default function RendimientoQuesoScreen() {
   const aplicarPreset = (dias: number) => {
     setFechaInicio(haceDiasLocal(dias - 1));
     setFechaFin(fechaLocalISO());
-    setCalculado(false); // Limpiar cálculo previo para evitar datos inconsistentes
+    setCalculado(false);
+    setEditingLoteId(null);
   };
 
   const cargarHistorial = useCallback(async () => {
@@ -87,7 +91,6 @@ export default function RendimientoQuesoScreen() {
         .orderBy(desc(rendimientosQueso.creadoEn))
         .limit(15);
 
-      // Mapeo seguro asegurando que cumpla con la estructura de la interfaz
       const historialMapeado: HistorialQueso[] = rows.map((r) => ({
         id: r.id,
         fincaId: r.fincaId,
@@ -96,6 +99,7 @@ export default function RendimientoQuesoScreen() {
         totalLitros: Number(r.totalLitros) || 0,
         kgQueso: Number(r.kgQueso) || 0,
         litrosPorKg: Number(r.litrosPorKg) || 0,
+        notes: r.notas ?? null,
         notas: r.notas ?? null,
         creadoEn: r.creadoEn ?? null,
       }));
@@ -114,45 +118,77 @@ export default function RendimientoQuesoScreen() {
 
   const guardarLote = async () => {
     if (!fincaId || totalLitros === null || litrosPorKg === null) {
-      Alert.alert('Calcular primero', 'Completa el cálculo L/kg antes de guardar el lote.');
+      Alert.alert('Calcular primero', 'Completa el cálculo L/kg antes de guardar.');
       return;
     }
     const kg = parseFloat(kgQueso.replace(',', '.'));
     if (Number.isNaN(kg) || kg <= 0) return;
 
     try {
-      await db.insert(rendimientosQueso).values({
-        id: Crypto.randomUUID(),
-        fincaId,
-        fechaInicio,
-        fechaFin,
-        totalLitros,
-        kgQueso: kg,
-        litrosPorKg,
-        notas: McCut(notasLote),
-      });
+      if (editingLoteId) {
+        await db
+          .update(rendimientosQueso)
+          .set({
+            fechaInicio,
+            fechaFin,
+            totalLitros,
+            kgQueso: kg,
+            litrosPorKg,
+            notas: McCut(notasLote),
+          })
+          .where(eq(rendimientosQueso.id, editingLoteId));
 
-      Alert.alert('Guardado', 'Lote de queso registrado en el historial.');
+        Alert.alert('Actualizado', 'Lote de queso modificado exitosamente.');
+        setEditingLoteId(null);
+      } else {
+        await db.insert(rendimientosQueso).values({
+          id: Crypto.randomUUID(),
+          fincaId,
+          fechaInicio,
+          fechaFin,
+          totalLitros,
+          kgQueso: kg,
+          litrosPorKg,
+          notas: McCut(notasLote),
+        });
+
+        Alert.alert('Guardado', 'Lote de queso registrado en el historial.');
+      }
+
       setNotasLote('');
+      setCalculado(false);
       await cargarHistorial();
     } catch (e) {
       console.error(e);
-      Alert.alert('Error', 'No se pudo guardar el lote.');
+      Alert.alert('Error', 'No se pudo procesar el lote.');
     }
+  };
+
+  const cancelarEdicion = () => {
+    setEditingLoteId(null);
+    setFechaInicio(haceDiasLocal(6));
+    setFechaFin(fechaLocalISO());
+    setKgQueso('');
+    setNotasLote('');
+    setCalculado(false);
   };
 
   const McCut = (text: string) => text.trim() || null;
 
   const cargarLitros = useCallback(
-    async (requiereKg: boolean) => {
-      const rango = validarRangoFechas(fechaInicio, fechaFin);
+    async (requiereKg: boolean, inicioOpt?: string, finOpt?: string, kgOpt?: string) => {
+      const ini = inicioOpt || fechaInicio;
+      const fin = finOpt || fechaFin;
+      const kgStr = kgOpt !== undefined ? kgOpt : kgQueso;
+
+      const rango = validarRangoFechas(ini, fin);
       if (!rango.ok) {
         Alert.alert('Fechas inválidas', rango.mensaje);
         return;
       }
 
-      const kg = parseFloat(kgQueso.replace(',', '.'));
-      if (requiereKg && (!kgQueso.trim() || Number.isNaN(kg) || kg <= 0)) {
+      const kg = parseFloat(kgStr.replace(',', '.'));
+      if (requiereKg && (!kgStr.trim() || Number.isNaN(kg) || kg <= 0)) {
         Alert.alert('Kg de queso', 'Ingresa el total de kg de queso producido (mayor a 0).');
         return;
       }
@@ -170,23 +206,21 @@ export default function RendimientoQuesoScreen() {
           return;
         }
 
-        // Mantener sincronizado el estado base de la pantalla
         setFincaNombre(finca.nombre);
         setFincaId(finca.id);
 
         const condiciones = [
           eq(animales.fincaId, finca.id),
-          gte(produccionLeche.fecha, fechaInicio),
-          lte(produccionLeche.fecha, fechaFin),
+          gte(produccionLeche.fecha, ini),
+          lte(produccionLeche.fecha, fin),
         ];
 
         if (soloLeche) {
           condiciones.push(inArray(animales.proposito, ['Leche', 'Doble_Proposito']));
         }
-        
+
         const filtroRango = and(...condiciones);
 
-        // Forzar casting nativo en SQL para evitar fallos de strings en SQLite
         const [totales] = await db
           .select({
             totalLitros: sql<number>`CAST(coalesce(sum(${produccionLeche.litros}), 0) AS REAL)`,
@@ -211,18 +245,18 @@ export default function RendimientoQuesoScreen() {
         setTotalLitros(Number(totales?.totalLitros) || 0);
         setConteoRegistros(Number(totales?.conteo) || 0);
         setConteoAnimales(Number(totales?.animales) || 0);
-        
+
         setDesglose(
           porAnimal.map((r) => ({
             areteCodigo: r.areteCodigo ?? 'S/N',
             litros: Number(r.litros) || 0,
           }))
         );
-        
+
         setCalculado(true);
       } catch (error) {
         console.error('Error en cálculo de litros:', error);
-        Alert.alert('Error', 'No se pudo calcular el rendimiento. Intenta de nuevo.');
+        Alert.alert('Error', 'No se pudo calcular el rendimiento.');
       } finally {
         setCalculando(false);
       }
@@ -230,16 +264,158 @@ export default function RendimientoQuesoScreen() {
     [fechaInicio, fechaFin, kgQueso, soloLeche]
   );
 
+  const seleccionarLoteHistorial = (h: HistorialQueso) => {
+    setEditingLoteId(h.id);
+    setFechaInicio(h.fechaInicio);
+    setFechaFin(h.fechaFin);
+    setKgQueso(String(h.kgQueso));
+    setNotasLote(h.notas || '');
+    cargarLitros(true, h.fechaInicio, h.fechaFin, String(h.kgQueso));
+  };
+
+  const exportarHistorialPDF = async () => {
+    if (historial.length === 0) {
+      Alert.alert('Sin datos', 'No hay registros en el historial para exportar.');
+      return;
+    }
+
+    const filasHtml = historial
+      .map(
+        (h) => `
+      <tr>
+        <td>${h.fechaInicio} al ${h.fechaFin}</td>
+        <td>${h.totalLitros.toFixed(1)} L</td>
+        <td>${h.kgQueso.toFixed(1)} kg</td>
+        <td style="font-weight: bold; color: #b45309;">${h.litrosPorKg.toFixed(2)} L/kg</td>
+        <td>${h.notas || '—'}</td>
+      </tr>`
+      )
+      .join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: sans-serif; color: #1e293b; padding: 20px; }
+            h1 { color: #065f46; font-size: 24px; margin-bottom: 4px; }
+            h2 { color: #475569; font-size: 14px; margin-top: 0; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+            th { backgroundColor: #f8fafc; color: #475569; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>Historial de Rendimiento Quesero</h1>
+          <h2>Finca: ${fincaNombre || 'Finca Activa'}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th>Litros Leche</th>
+                <th>Kg Queso</th>
+                <th>Rendimiento</th>
+                <th>Notas</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'No se pudo generar el archivo PDF.');
+    }
+  };
+
+  const exportarLoteActualPDF = async () => {
+    if (!calculado || totalLitros === null || litrosPorKg === null) {
+      Alert.alert('Falta cálculo', 'Calcula o selecciona un lote primero antes de exportar su desglose.');
+      return;
+    }
+
+    const filasDesgloseHtml = desglose
+      .map(
+        (d) => `
+      <tr>
+        <td style="font-weight: bold;">Arete ${d.areteCodigo}</td>
+        <td style="text-align: right; color: #065f46; font-weight: bold;">${d.litros.toFixed(1)} L</td>
+      </tr>`
+      )
+      .join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: sans-serif; color: #1e293b; padding: 20px; }
+            .header { border-bottom: 2px solid #065f46; padding-bottom: 12px; margin-bottom: 20px; }
+            h1 { color: #065f46; font-size: 22px; margin: 0 0 4px 0; }
+            .meta { color: #64748b; font-size: 13px; margin: 0; }
+            .resumen-box { background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 16px; border-radius: 8px; margin-bottom: 24px; display: flex; justify-content: space-between; }
+            .resumen-item { text-align: center; flex: 1; }
+            .resumen-val { font-size: 20px; font-weight: bold; color: #065f46; }
+            .resumen-lbl { font-size: 11px; color: #475569; text-transform: uppercase; margin-top: 4px; }
+            h3 { color: #334155; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; max-width: 400px; }
+            td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Reporte de Lote Quesero</h1>
+            <p class="meta">Finca: ${fincaNombre} | Período: ${fechaInicio} al ${fechaFin}</p>
+            ${notasLote ? `<p class="meta" style="margin-top:4px;"><strong>Notas:</strong> ${notasLote}</p>` : ''}
+          </div>
+
+          <div class="resumen-box">
+            <div class="resumen-item">
+              <div class="resumen-val">${totalLitros.toFixed(1)} L</div>
+              <div class="resumen-lbl">Total Leche</div>
+            </div>
+            <div class="resumen-item">
+              <div class="resumen-val">${parseFloat(kgQueso.replace(',', '.')).toFixed(1)} kg</div>
+              <div class="resumen-lbl">Total Queso</div>
+            </div>
+            <div class="resumen-item">
+              <div class="resumen-val" style="color: #ca8a04;">${litrosPorKg.toFixed(2)}</div>
+              <div class="resumen-lbl">L / Kg Queso</div>
+            </div>
+          </div>
+
+          <h3>Desglose de Producción por Animal</h3>
+          <table>
+            <tbody>
+              ${filasDesgloseHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'No se pudo generar el desglose en PDF.');
+    }
+  };
+
   const etiquetaRango = useMemo(() => {
-    return esFechaValida(fechaInicio) && esFechaValida(fechaFin)
-      ? `${fechaInicio} → ${fechaFin}`
-      : '—';
+    return esFechaValida(fechaInicio) && esFechaValida(fechaFin) ? `${fechaInicio} → ${fechaFin}` : '—';
   }, [fechaInicio, fechaFin]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>
           <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
         <View style={styles.headerText}>
@@ -252,7 +428,17 @@ export default function RendimientoQuesoScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.formTitle}>Período de ordeño</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <Text style={styles.formTitle}>
+            {editingLoteId ? 'Editando lote guardado' : 'Período de ordeño'}
+          </Text>
+          {editingLoteId && (
+            <TouchableOpacity style={styles.btnCancelEdit} onPress={cancelarEdicion}>
+              <X color="#ef4444" size={16} style={{ marginRight: 4 }} />
+              <Text style={styles.btnCancelEditText}>Cancelar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <Text style={styles.hint}>Suma todos los turnos (M/T/N) de la finca activa.</Text>
 
         <View style={styles.presetRow}>
@@ -264,7 +450,13 @@ export default function RendimientoQuesoScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.filtroRow} onPress={() => { setSoloLeche((v) => !v); setCalculado(false); }}>
+        <TouchableOpacity
+          style={styles.filtroRow}
+          onPress={() => {
+            setSoloLeche((v) => !v);
+            setCalculado(false);
+          }}
+        >
           <View style={[styles.checkbox, soloLeche && styles.checkboxOn]} />
           <Text style={styles.filtroLabel}>Solo animales de propósito leche / doble</Text>
         </TouchableOpacity>
@@ -275,7 +467,10 @@ export default function RendimientoQuesoScreen() {
           placeholder="YYYY-MM-DD"
           placeholderTextColor="#94a3b8"
           value={fechaInicio}
-          onChangeText={(txt) => { setFechaInicio(txt); setCalculado(false); }}
+          onChangeText={(txt) => {
+            setFechaInicio(txt);
+            setCalculado(false);
+          }}
           autoCapitalize="none"
         />
 
@@ -285,7 +480,10 @@ export default function RendimientoQuesoScreen() {
           placeholder="YYYY-MM-DD"
           placeholderTextColor="#94a3b8"
           value={fechaFin}
-          onChangeText={(txt) => { setFechaFin(txt); setCalculado(false); }}
+          onChangeText={(txt) => {
+            setFechaFin(txt);
+            setCalculado(false);
+          }}
           autoCapitalize="none"
         />
 
@@ -296,7 +494,10 @@ export default function RendimientoQuesoScreen() {
           placeholderTextColor="#94a3b8"
           keyboardType="decimal-pad"
           value={kgQueso}
-          onChangeText={setKgQueso}
+          onChangeText={(txt) => {
+            setKgQueso(txt);
+            setCalculado(false);
+          }}
         />
 
         <TouchableOpacity
@@ -326,8 +527,16 @@ export default function RendimientoQuesoScreen() {
       {calculado && totalLitros !== null && (
         <>
           <View style={styles.resultCard}>
-            <Text style={styles.resultLabel}>Rango</Text>
-            <Text style={styles.resultMeta}>{etiquetaRango}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View>
+                <Text style={styles.resultLabel}>Rango</Text>
+                <Text style={styles.resultMeta}>{etiquetaRango}</Text>
+              </View>
+              <TouchableOpacity style={styles.btnPdfFloating} onPress={exportarLoteActualPDF}>
+                <FileText color="#047857" size={18} style={{ marginRight: 4 }} />
+                <Text style={styles.btnPdfFloatingText}>PDF Lote</Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
@@ -366,7 +575,9 @@ export default function RendimientoQuesoScreen() {
                 />
                 <TouchableOpacity style={styles.btnGuardarLote} onPress={guardarLote}>
                   <Save color="#fff" size={18} style={{ marginRight: 8 }} />
-                  <Text style={styles.btnCalcularText}>Guardar en historial</Text>
+                  <Text style={styles.btnCalcularText}>
+                    {editingLoteId ? 'Actualizar lote guardado' : 'Guardar en historial'}
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -392,18 +603,19 @@ export default function RendimientoQuesoScreen() {
 
       {historial.length > 0 && (
         <View style={styles.desgloseSection}>
-          <Text style={styles.sectionTitle}>Historial de lotes guardados</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={styles.sectionTitle}>Historial de lotes guardados</Text>
+            <TouchableOpacity style={styles.btnPdfGeneral} onPress={exportarHistorialPDF}>
+<FileText color={styles.btnPdfGeneralText.color} size={14} style={{ marginRight: 4 }} />
+              <Text style={styles.btnPdfGeneralText}>Exportar Historial</Text>
+            </TouchableOpacity>
+          </View>
+
           {historial.map((h) => (
             <TouchableOpacity
               key={h.id}
-              style={styles.historialRow}
-              onPress={() => {
-                setFechaInicio(h.fechaInicio);
-                setFechaFin(h.fechaFin);
-                setKgQueso(String(h.kgQueso));
-                setNotasLote(h.notas || '');
-                setCalculado(false); // Forzar recálculo si el usuario toca un elemento antiguo
-              }}
+              style={[styles.historialRow, editingLoteId === h.id && styles.historialRowActive]}
+              onPress={() => seleccionarLoteHistorial(h)}
             >
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={styles.historialRango}>
@@ -423,7 +635,6 @@ export default function RendimientoQuesoScreen() {
   );
 }
 
-// Los estilos se mantienen idénticos
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   content: { paddingBottom: 100 },
@@ -452,8 +663,8 @@ const styles = StyleSheet.create({
     borderColor: '#f1f5f9',
     elevation: 1,
   },
-  formTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 4 },
-  hint: { fontSize: 12, color: '#64748b', marginBottom: 16 },
+  formTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  hint: { fontSize: 12, color: '#64748b', marginBottom: 16, marginTop: 4 },
   label: {
     fontSize: 12,
     fontWeight: '700',
@@ -555,8 +766,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
-    marginBottom: 12,
-    paddingLeft: 4,
+    flex: 1,
   },
   desgloseRow: {
     flexDirection: 'row',
@@ -598,7 +808,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f1f5f9',
   },
+  historialRowActive: {
+    borderColor: '#ca8a04',
+    borderWidth: 1.5,
+    backgroundColor: '#fefce8',
+  },
   historialRango: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
   historialMeta: { fontSize: 11, color: '#64748b', marginTop: 2, maxWidth: 220 },
   historialRatio: { fontSize: 16, fontWeight: '800', color: '#ca8a04' },
+  btnCancelEdit: { flexDirection: 'row', alignItems: 'center', padding: 4 },
+  btnCancelEditText: { fontSize: 12, color: '#ef4444', fontWeight: '600' },
+  btnPdfGeneral: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e6f4ea',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#a7f3d0'
+  },
+  btnPdfGeneralText: { color: '#065f46',
+    fontSize: 12,
+    fontWeight: '700' },
+  btnPdfFloating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  btnPdfFloatingText: { fontSize: 12, color: '#047857', fontWeight: '700' },
 });

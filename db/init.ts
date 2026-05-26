@@ -4,9 +4,9 @@ import { db } from './client';
 import { especies, razas } from './schema';
 
 export async function inicializarBaseDeDatos() {
+  // Aseguramos que las llaves foráneas estén activas para la creación de tablas
   await db.run(sql`PRAGMA foreign_keys = ON;`);
 
-  // 1. Crear la tabla fincas asegurando la columna "activa"
   await db.run(sql`
     CREATE TABLE IF NOT EXISTS fincas (
       id TEXT PRIMARY KEY NOT NULL, 
@@ -144,43 +144,171 @@ export async function inicializarBaseDeDatos() {
     );
   `);
 
-  // Migración: corregir typo en instalaciones previas (fecha_application → fecha_aplicacion)
+  // Migración: corregir typo en instalaciones previas
   try {
     await db.run(
       sql`ALTER TABLE historial_medico RENAME COLUMN fecha_application TO fecha_aplicacion;`
     );
-    console.log('DB: Columna historial_medico.fecha_aplicacion corregida.');
   } catch {
-    // Tabla nueva, columna ya correcta, o SQLite sin RENAME COLUMN
+    // Ya corregida o SQLite sin RENAME COLUMN
   }
 
-  // 2. Insertar Semillas de Especies
-  const cantidadEspecies = await db.select().from(especies);
-  if (cantidadEspecies.length === 0) {
-    await db.insert(especies).values([
-      { id: 1, nombre: 'Bovino' },
-      { id: 2, nombre: 'Bufalino' },
-      { id: 3, nombre: 'Ovino' },
-      { id: 4, nombre: 'Equino' },
-      { id: 5, nombre: 'Caprino' }
-    ]);
-    console.log('🌱 Especies base cargadas.');
-  }
+  // ── APAGAR LLAVES FORÁNEAS TEMPORALMENTE PARA CARGAR SEMILLAS ────────────
+  await db.run(sql`PRAGMA foreign_keys = OFF;`);
 
-  // 3. Insertar Semillas de Razas correspondientes a los IDs de las especies
-  const cantidadRazas = await db.select().from(razas);
-  if (cantidadRazas.length === 0) {
-    await db.insert(razas).values([
-      // Razas Bovinas (especie_id: 1)
+  try {
+    // ── Semillas de Especies ─────────────────────────────────────────────────
+    const cantidadEspecies = await db.select().from(especies);
+    if (cantidadEspecies.length === 0) {
+      await db.insert(especies).values([
+        { id: 1, nombre: 'Bovino' },
+        { id: 2, nombre: 'Bufalino' },
+        { id: 3, nombre: 'Ovino' },
+        { id: 4, nombre: 'Equino' },
+        { id: 5, nombre: 'Caprino' },
+        { id: 6, nombre: 'Porcino' },
+      ]);
+      console.log('🌱 Especies base cargadas.');
+    } else {
+      // Verificar e inyectar las especies que falten si la DB ya existía
+      const nombresEspeciesExistentes = cantidadEspecies.map((e: any) => e.nombre.toLowerCase());
+      const especiesRequeridas = [
+        { id: 1, nombre: 'Bovino' },
+        { id: 2, nombre: 'Bufalino' },
+        { id: 3, nombre: 'Ovino' },
+        { id: 4, nombre: 'Equino' },
+        { id: 5, nombre: 'Caprino' },
+        { id: 6, nombre: 'Porcino' },
+      ];
+
+      for (const esp of especiesRequeridas) {
+        if (!nombresEspeciesExistentes.includes(esp.nombre.toLowerCase())) {
+          await db.insert(especies).values(esp);
+          console.log(`🌱 Especie ${esp.nombre} inyectada en base de datos existente.`);
+        }
+      }
+    }
+
+// Definición maestra del catálogo extendido de razas
+    const catalogoExtendidoRazas = [
+      // === Bovino (1) ===
       { especieId: 1, nombre: 'Gyr' },
       { especieId: 1, nombre: 'Holstein' },
       { especieId: 1, nombre: 'Brahman' },
       { especieId: 1, nombre: 'Carora' },
-      // Razas Bufalinas (especie_id: 2)
+      { especieId: 1, nombre: 'Girolando' },
+      { especieId: 1, nombre: 'Jersey' },
+      { especieId: 1, nombre: 'Brown Swiss (Pardo Suizo)' },
+      { especieId: 1, nombre: 'Guzerá' },
+      { especieId: 1, nombre: 'Nelore' },
+      { especieId: 1, nombre: 'Senepol' },
+      { especieId: 1, nombre: 'Angus' },
+      { especieId: 1, nombre: 'Simmental' },
+      { especieId: 1, nombre: 'Criollo Limonero' },
+      { especieId: 1, nombre: 'Mosaico Perijanero' },
+      { especieId: 1, nombre: 'Sahiwal' },
+      { especieId: 1, nombre: 'Simental-Gyr (Simmgyr)' },
+      { especieId: 1, nombre: 'Romosinuano' },
+      { especieId: 1, nombre: 'Brangus' },
+      { especieId: 1, nombre: 'Braford' },
+      { especieId: 1, nombre: 'Normando' },
+      { especieId: 1, nombre: 'Charolais' },
+      { especieId: 1, nombre: 'Santa Gertrudis' },
+      { especieId: 1, nombre: 'Mestizo Doble Propósito' },
+      { especieId: 1, nombre: 'Mestizo de Leche' },
+      { especieId: 1, nombre: 'Mestizo de Carne' },
+      { especieId: 1, nombre: 'Criollo' },
+
+      // === Bufalino (2) ===
       { especieId: 2, nombre: 'Murrah' },
       { especieId: 2, nombre: 'Mediterráneo' },
-      { especieId: 2, nombre: 'Jafarabadi' }
-    ]);
-    console.log('🌱 Razas base cargadas (Murrah, Gyr, Mediterráneo, etc.).');
+      { especieId: 2, nombre: 'Jafarabadi' },
+      { especieId: 2, nombre: 'Nili-Ravi' },
+      { especieId: 2, nombre: 'Carabao' },
+      { especieId: 2, nombre: 'Mestizo Bufalino' },
+
+      // === Ovino (3) ===
+      { especieId: 3, nombre: 'Pelibuey' },
+      { especieId: 3, nombre: 'Dorper' },
+      { especieId: 3, nombre: 'White Dorper' },
+      { especieId: 3, nombre: 'West African' },
+      { especieId: 3, nombre: 'Santa Inés' },
+      { especieId: 3, nombre: 'Katahdin' },
+      { especieId: 3, nombre: 'Blackbelly (Barbados Blackbelly)' },
+      { especieId: 3, nombre: 'Charollais' },
+      { especieId: 3, nombre: 'Assaf' },
+      { especieId: 3, nombre: 'Lacaune' },
+      { especieId: 3, nombre: 'Bergamasca' },
+      { especieId: 3, nombre: 'Texel' },
+      { especieId: 3, nombre: 'Mestizo Ovino' },
+      { especieId: 3, nombre: 'Criollo' },
+
+      // === Equino (4) ===
+      { especieId: 4, nombre: 'Criollo Venezolano' },
+      { especieId: 4, nombre: 'Cuarto de Milla (Quarter Horse)' },
+      { especieId: 4, nombre: 'Paso Fino' },
+      { especieId: 4, nombre: 'Pura Sangre Inglés' },
+      { especieId: 4, nombre: 'Appaloosa' },
+      { especieId: 4, nombre: 'Árabe' },
+      { especieId: 4, nombre: 'Percherón' },
+      { especieId: 4, nombre: 'Pinto' },
+      { especieId: 4, nombre: 'Lusitano' },
+      { especieId: 4, nombre: 'Pura Raza Española (Andaluz)' },
+      { especieId: 4, nombre: 'Iberoamericano' },
+      { especieId: 4, nombre: 'Mestizo Equino' },
+
+      // === Caprino (5) ===
+      { especieId: 5, nombre: 'Nubia / Anglo-Nubian' },
+      { especieId: 5, nombre: 'Boer' },
+      { especieId: 5, nombre: 'Saanen' },
+      { especieId: 5, nombre: 'Alpina' },
+      { especieId: 5, nombre: 'Toggenburg' },
+      { especieId: 5, nombre: 'Murciano-Granadina' },
+      { especieId: 5, nombre: 'Canaria' },
+      { especieId: 5, nombre: 'Kalahari Red' },
+      { especieId: 5, nombre: 'Mestizo Caprino' },
+      { especieId: 5, nombre: 'Criolla' },
+
+      // === Porcino (6) ===
+      { especieId: 6, nombre: 'Landrace' },
+      { especieId: 6, nombre: 'Large White (Yorkshire)' },
+      { especieId: 6, nombre: 'Duroc' },
+      { especieId: 6, nombre: 'Hampshire' },
+      { especieId: 6, nombre: 'Pietrain' },
+      { especieId: 6, nombre: 'Berkshire' },
+      { especieId: 6, nombre: 'Meishan' },
+      { especieId: 6, nombre: 'Criollo / Casco de Mula' },
+      { especieId: 6, nombre: 'Mestizo Porcino' },
+    ];
+
+    // ── Semillas de Razas (Instalación desde cero o Migración) ────────────────
+    const cantidadRazas = await db.select().from(razas);
+    if (cantidadRazas.length === 0) {
+      await db.insert(razas).values(catalogoExtendidoRazas);
+      console.log('🌱 Catálogo extendido de razas cargado con éxito.');
+    } else {
+      console.log('🔄 Sincronizando catálogo de razas con nuevas inclusiones...');
+      
+      const mapeoExistentes = cantidadRazas.reduce((acc: Record<number, string[]>, r: any) => {
+        if (!acc[r.especieId]) acc[r.especieId] = [];
+        acc[r.especieId].push(r.nombre.toLowerCase().trim());
+        return acc;
+      }, {});
+
+      const razasFaltantes = catalogoExtendidoRazas.filter((nuevaRaza) => {
+        const nombresEnEspecie = mapeoExistentes[nuevaRaza.especieId] || [];
+        return !nombresEnEspecie.includes(nuevaRaza.nombre.toLowerCase().trim());
+      });
+
+      if (razasFaltantes.length > 0) {
+        await db.insert(razas).values(razasFaltantes);
+        console.log(`🌱 Migración completa: Se inyectaron ${razasFaltantes.length} nuevas razas sin alterar los registros existentes.`);
+      } else {
+        console.log('✅ Catálogo de razas al día.');
+      }
+    }
+  } finally {
+    // ── REENCENDER LLAVES FORÁNEAS ANTES DE SALIR ───────────────────────────
+    await db.run(sql`PRAGMA foreign_keys = ON;`);
   }
 }

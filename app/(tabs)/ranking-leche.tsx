@@ -1,6 +1,8 @@
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import * as Print from 'expo-print';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Medal, Milk } from 'lucide-react-native';
+import * as Sharing from 'expo-sharing';
+import { ArrowLeft, FileText, Medal, Milk } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -39,28 +41,25 @@ export default function RankingLecheScreen() {
   const [soloActivos, setSoloActivos] = useState(true);
   const [soloLeche, setSoloLeche] = useState(true);
   
-  // ARREGLO 1: Por defecto en true. Al ser un ranking lechero, el foco son las hembras.
-  const [soloHembras, setSoloHembras] = useState(true); 
-  
   const [criterio, setCriterio] = useState<CriterioOrden>('promedioDia');
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [calculando, setCalculando] = useState(false);
   const [calculado, setCalculado] = useState(false);
+  const [exportandoPdf, setExportandoPdf] = useState(false);
 
-    useEffect(() => {
-      const backAction = () => {
-        // Redirige a registros en lugar de hacer el 'pop' normal
-        router.replace('/registros'); 
-        return true; // Esto le dice a React Native: "Yo me encargo, no hagas la acción por defecto"
-      };
-  
-      const backHandler = BackHandler.addEventListener(
-        'hardwareBackPress',
-        backAction
-      );
-  
-      return () => backHandler.remove();
-    }, []);
+  useEffect(() => {
+    const backAction = () => {
+      router.replace('/registros'); 
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, []);
     
   const aplicarPreset = (dias: number) => {
     setFechaInicio(haceDiasLocal(dias - 1));
@@ -96,11 +95,9 @@ export default function RankingLecheScreen() {
       if (soloLeche) {
         condiciones.push(inArray(animales.proposito, ['Leche', 'Doble_Proposito']));
       }
-      if (soloHembras) condiciones.push(eq(animales.sexo, 'F'));
 
       const filtro = and(...condiciones);
 
-      // ARREGLO 2: Mapeo explícito con .mapWith() para curar los retornos de SQLite en Expo
       const rows = await db
         .select({
           animalId: animales.id,
@@ -147,7 +144,7 @@ export default function RankingLecheScreen() {
     } finally {
       setCalculando(false);
     }
-  }, [fechaInicio, fechaFin, soloActivos, soloLeche, soloHembras, criterio]);
+  }, [fechaInicio, fechaFin, soloActivos, soloLeche, criterio]);
 
   const etiquetaCriterio =
     criterio === 'totalLitros'
@@ -156,10 +153,118 @@ export default function RankingLecheScreen() {
         ? 'Promedio L/pesada'
         : 'Promedio L/día';
 
+  // NUEVA FUNCIÓN: Generación e impresión/compartición del PDF
+  const handleExportarPDF = async () => {
+    if (ranking.length === 0) {
+      Alert.alert('Sin datos', 'No hay registros en el ranking actual para exportar.');
+      return;
+    }
+
+    try {
+      setExportandoPdf(true);
+
+      const filasHtml = ranking.map((row, index) => `
+        <tr class="${index < 3 ? 'top-row' : ''}">
+          <td style="text-align: center; font-weight: bold;">${index + 1}</td>
+          <td style="font-weight: bold;">#${row.areteCodigo}</td>
+          <td>${row.nombre || '<em>Sin nombre</em>'}</td>
+          <td style="text-align: right;">${row.totalLitros.toFixed(1)} L</td>
+          <td style="text-align: center;">${row.diasOrdeño}</td>
+          <td style="text-align: center;">${row.pesadas}</td>
+          <td style="text-align: right; font-weight: bold; color: #065f46;">${row.promedioDia.toFixed(2)} L</td>
+          <td style="text-align: right;">${row.promedioPesada.toFixed(2)} L</td>
+        </tr>
+      `).join('');
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; margin: 30px; font-size: 12px; }
+            .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 20px; }
+            .title { fontSize: 24px; font-weight: bold; color: #1e293b; margin: 0; }
+            .subtitle { font-size: 14px; color: #065f46; margin: 4px 0 0 0; font-weight: 600; }
+            
+            .params-box { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; borderRadius: 8px; margin-bottom: 20px; }
+            .params-title { font-weight: bold; text-transform: uppercase; font-size: 10px; color: #64748b; margin-bottom: 6px; letter-spacing: 0.5px; }
+            .params-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+            .param-item { font-size: 11px; }
+            .param-label { font-weight: bold; color: #475569; }
+
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background-color: #065f46; color: white; padding: 8px; text-align: left; font-size: 11px; text-transform: uppercase; }
+            td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            .top-row { background-color: #fef9c3 !important; }
+            
+            .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">Ranking Lechero</h1>
+            <p class="subtitle">${fincaNombre || 'Reporte de Producción'}</p>
+          </div>
+
+          <div class="params-box">
+            <div class="params-title">Parámetros del Reporte</div>
+            <div class="params-grid">
+              <div class="param-item"><span class="param-label">Rango:</span> ${fechaInicio} hasta ${fechaFin}</div>
+              <div class="param-item"><span class="param-label">Ordenado por:</span> ${etiquetaCriterio}</div>
+              <div class="param-item"><span class="param-label">Solo Activos:</span> ${soloActivos ? 'Sí' : 'No'}</div>
+              <div class="param-item"><span class="param-label">Solo Propósito Leche:</span> ${soloLeche ? 'Sí' : 'No'}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: center; width: 40px;">Pos</th>
+                <th>Arete</th>
+                <th>Nombre</th>
+                <th style="text-align: right;">Total Litros</th>
+                <th style="text-align: center;">Días Ord.</th>
+                <th style="text-align: center;">Pesadas</th>
+                <th style="text-align: right;">Prom L/Día</th>
+                <th style="text-align: right;">Prom L/Psd</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasHtml}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Reporte generado automáticamente · ${new Date().toLocaleDateString()}
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Genera el archivo PDF temporal
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      
+      // Abre el menú nativo para compartir o guardar el archivo
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `Ranking_Lechero_${fechaInicio}_${fechaFin}`,
+        UTI: 'com.adobe.pdf',
+      });
+
+    } catch (e) {
+      console.error('Error generando PDF:', e);
+      Alert.alert('Error', 'No se pudo exportar el reporte en PDF.');
+    } finally {
+      setExportandoPdf(false);
+    }
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
           <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
         <View style={styles.headerText}>
@@ -222,7 +327,6 @@ export default function RankingLecheScreen() {
         <Text style={styles.label}>Filtros</Text>
         <FiltroToggle label="Solo activos" value={soloActivos} onToggle={() => setSoloActivos((v) => !v)} />
         <FiltroToggle label="Solo propósito leche / doble" value={soloLeche} onToggle={() => setSoloLeche((v) => !v)} />
-        <FiltroToggle label="Solo hembras" value={soloHembras} onToggle={() => setSoloHembras((v) => !v)} />
 
         <TouchableOpacity
           style={[styles.btnCalcular, calculando && styles.btnDisabled]}
@@ -242,9 +346,30 @@ export default function RankingLecheScreen() {
 
       {calculado && (
         <View style={styles.listSection}>
-          <Text style={styles.sectionTitle}>
-            {etiquetaCriterio} · {fechaInicio} → {fechaFin}
-          </Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>
+              {etiquetaCriterio} · {fechaInicio} → {fechaFin}
+            </Text>
+            
+            {/* BOTÓN DE EXPORTACIÓN PDF */}
+            {ranking.length > 0 && (
+              <TouchableOpacity 
+                style={styles.btnPdf} 
+                onPress={handleExportarPDF}
+                disabled={exportandoPdf}
+              >
+                {exportandoPdf ? (
+                  <ActivityIndicator color="#065f46" size="small" />
+                ) : (
+                  <>
+                    <FileText color="#065f46" size={16} style={{ marginRight: 4 }} />
+                    <Text style={styles.btnPdfText}>Exportar PDF</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
           {ranking.length === 0 ? (
             <Text style={styles.empty}>No hay producción de leche en este período con los filtros elegidos.</Text>
           ) : (
@@ -389,13 +514,35 @@ const styles = StyleSheet.create({
   btnDisabled: { backgroundColor: '#a7f3d0' },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   listSection: { paddingHorizontal: 16 },
+  sectionHeaderRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    marginBottom: 12 
+  },
   sectionTitle: {
     fontSize: 11,
     fontWeight: '700',
     color: '#94a3b8',
     textTransform: 'uppercase',
     letterSpacing: 1,
-    marginBottom: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  btnPdf: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e6f4ea',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#a7f3d0'
+  },
+  btnPdfText: {
+    color: '#065f46',
+    fontSize: 12,
+    fontWeight: '700'
   },
   empty: { textAlign: 'center', color: '#64748b', marginTop: 16 },
   rankCard: {

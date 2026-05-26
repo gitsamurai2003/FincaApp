@@ -1,6 +1,8 @@
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import * as Print from 'expo-print';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Medal, Scale } from 'lucide-react-native';
+import * as Sharing from 'expo-sharing';
+import { ArrowLeft, FileText, Medal, Scale } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,9 +38,7 @@ export default function RankingPesoScreen() {
   const [fechaFin, setFechaFin] = useState(fechaLocalISO());
   const [soloActivos, setSoloActivos] = useState(true);
   const [soloCarne, setSoloCarne] = useState(false);
-  
-  const [soloHembras, setSoloHembras] = useState(false); 
-  
+  const [soloHembras, setSoloHembras] = useState(false);
   const [criterio, setCriterio] = useState<CriterioOrden>('pesoMaximo');
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [calculando, setCalculando] = useState(false);
@@ -46,9 +46,8 @@ export default function RankingPesoScreen() {
 
   useEffect(() => {
     const backAction = () => {
-      // Redirige a registros en lugar de hacer el 'pop' normal
-      router.replace('/registros'); 
-      return true; // Esto le dice a React Native: "Yo me encargo, no hagas la acción por defecto"
+      router.replace('/registros');
+      return true;
     };
 
     const backHandler = BackHandler.addEventListener(
@@ -58,7 +57,7 @@ export default function RankingPesoScreen() {
 
     return () => backHandler.remove();
   }, []);
-  
+
   const aplicarPreset = (dias: number) => {
     setFechaInicio(haceDiasLocal(dias - 1));
     setFechaFin(fechaLocalISO());
@@ -136,7 +135,7 @@ export default function RankingPesoScreen() {
       setRanking(lista);
       setCalculado(true);
     } catch (e) {
-      console.error('Error calculando ranking de peso:', e);
+      console.error(e);
       Alert.alert('Error', 'No se pudo calcular el ranking.');
     } finally {
       setCalculando(false);
@@ -147,14 +146,83 @@ export default function RankingPesoScreen() {
     criterio === 'pesoMaximo'
       ? 'Peso Máximo'
       : criterio === 'pesadas'
-        ? 'Nº Pesadas'
-        : 'Peso Promedio';
+      ? 'Nº Pesadas'
+      : 'Peso Promedio';
+
+  const exportarRankingPDF = async () => {
+    if (ranking.length === 0) {
+      Alert.alert('Sin datos', 'No hay registros en el ranking para exportar.');
+      return;
+    }
+
+    const filasHtml = ranking
+      .map(
+        (r, index) => `
+      <tr>
+        <td class="rank-num">${index + 1}</td>
+        <td style="font-weight: bold;">${r.areteCodigo}</td>
+        <td>${r.nombre || '—'}</td>
+        <td style="color: #065f46; font-weight: bold;">${r.pesoMaximo.toFixed(1)} kg</td>
+        <td>${r.pesoPromedio.toFixed(1)} kg</td>
+        <td>${r.pesadas}</td>
+      </tr>`
+      )
+      .join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: sans-serif; color: #1e293b; padding: 20px; }
+            .header { border-bottom: 2px solid #065f46; padding-bottom: 12px; margin-bottom: 20px; }
+            h1 { color: #065f46; font-size: 24px; margin: 0 0 4px 0; }
+            .meta { color: #64748b; font-size: 13px; margin: 4px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+            th { background-color: #f8fafc; color: #475569; font-weight: bold; }
+            .rank-num { font-weight: bold; color: #ca8a04; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Ranking de Peso</h1>
+            <p class="meta"><strong>Finca:</strong> ${fincaNombre || 'Finca Activa'}</p>
+            <p class="meta"><strong>Período:</strong> ${fechaInicio} al ${fechaFin}</p>
+            <p class="meta"><strong>Ordenado por:</strong> ${etiquetaCriterio}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Pos</th>
+                <th>Arete</th>
+                <th>Nombre</th>
+                <th>Peso Máximo</th>
+                <th>Promedio</th>
+                <th>Pesadas</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'No se pudo generar el archivo PDF.');
+    }
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>          
-        <ArrowLeft color="#1e293b" size={22} />
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/registros')}>
+          <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Ranking de Peso</Text>
@@ -208,7 +276,9 @@ export default function RankingPesoScreen() {
               style={[styles.presetChip, criterio === key && styles.presetChipActive]}
               onPress={() => setCriterio(key)}
             >
-              <Text style={[styles.presetText, criterio === key && styles.presetTextActive]}>{label}</Text>
+              <Text style={[styles.presetText, criterio === key && styles.presetTextActive]}>
+                {label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -236,9 +306,17 @@ export default function RankingPesoScreen() {
 
       {calculado && (
         <View style={styles.listSection}>
-          <Text style={styles.sectionTitle}>
-            {etiquetaCriterio} · {fechaInicio} → {fechaFin}
-          </Text>
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.sectionTitle}>
+              {etiquetaCriterio} · {fechaInicio} → {fechaFin}
+            </Text>
+            
+            <TouchableOpacity style={styles.btnPdfGeneral} onPress={exportarRankingPDF}>
+              <FileText color="#065f46" size={14} style={{ marginRight: 4 }} />
+              <Text style={styles.btnPdfGeneralText}>Exportar PDF</Text>
+            </TouchableOpacity>
+          </View>
+
           {ranking.length === 0 ? (
             <Text style={styles.empty}>No hay registros de peso en este período con los filtros elegidos.</Text>
           ) : (
@@ -271,8 +349,8 @@ export default function RankingPesoScreen() {
                     {criterio === 'pesoMaximo'
                       ? row.pesoMaximo.toFixed(1)
                       : criterio === 'pesadas'
-                        ? row.pesadas
-                        : row.pesoPromedio.toFixed(1)}
+                      ? row.pesadas
+                      : row.pesoPromedio.toFixed(1)}
                   </Text>
                   <Text style={styles.rankUnidad}>
                     {criterio === 'pesadas' ? 'reg' : 'kg'}
@@ -383,13 +461,19 @@ const styles = StyleSheet.create({
   btnDisabled: { backgroundColor: '#a7f3d0' },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   listSection: { paddingHorizontal: 16 },
+  listHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 11,
     fontWeight: '700',
     color: '#94a3b8',
     textTransform: 'uppercase',
     letterSpacing: 1,
-    marginBottom: 12,
+    flex: 1,
   },
   empty: { textAlign: 'center', color: '#64748b', marginTop: 16 },
   rankCard: {
@@ -421,4 +505,19 @@ const styles = StyleSheet.create({
   rankRight: { alignItems: 'flex-end' },
   rankValor: { fontSize: 20, fontWeight: '800', color: '#065f46' },
   rankUnidad: { fontSize: 10, color: '#64748b', fontWeight: '600' },
+  btnPdfGeneral: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e6f4ea',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  btnPdfGeneralText: {
+    color: '#065f46',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });
