@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { LicenseGuard } from '../components/LicenseGuard';
 import { inicializarBaseDeDatos } from '../db/init';
 
 export {
@@ -34,7 +35,6 @@ export default function RootLayout() {
   useEffect(() => {
     async function prepararEntorno() {
       try {
-        // Al importar esto, se ejecuta el db/client.ts, alterando la tabla a la fuerza
         await inicializarBaseDeDatos();
         console.log("DB: Base de datos cargada correctamente en el Layout.");
       } catch (e) {
@@ -57,7 +57,12 @@ export default function RootLayout() {
     return null;
   }
 
-  return <RootLayoutNav />;
+  // Transformación final: Envuelve la navegación inicializada en el escudo
+  return (
+    <LicenseGuard>
+      <RootLayoutNav />
+    </LicenseGuard>
+  );
 }
 
 function RootLayoutNav() {
@@ -67,7 +72,6 @@ function RootLayoutNav() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* Dejamos las rutas fijadas aquí para que no te tiren más WARN */}
         <Stack.Screen name="crear-finca" options={{ headerShown: false, presentation: 'card' }} />
         <Stack.Screen name="inventario" options={{ headerShown: false, presentation: 'card' }} />
         <Stack.Screen name="produccion" options={{ headerShown: false, presentation: 'card' }} />
