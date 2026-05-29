@@ -8,9 +8,8 @@
     "scheme": "fincaapp",
     "userInterfaceStyle": "automatic",
     "splash": {
-      // 👇 Apunta a la nueva imagen combinada (Lienzo 1280x1920)
       "image": "./assets/images/splash-logo.png",
-      "resizeMode": "contain", 
+      "resizeMode": "contain",
       "backgroundColor": "#065F46"
     },
     "ios": {
@@ -21,7 +20,8 @@
         "foregroundImage": "./assets/images/logos.png",
         "backgroundColor": "#065F46"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.adolfogf.FincaApp"
     },
     "web": {
       "bundler": "metro",
@@ -30,10 +30,22 @@
     },
     "plugins": [
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": "sk.eyJ1IjoiYWRvbGZvZ2YyMDAzIiwiYSI6ImNtcHFmaW84cDBvMGEyd29pdGl4MHptMTQifQ.OXxV44IEVj7-m00GUGjLwA"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a0c29bc1-e659-4453-954f-ab516692e9cc"
+      }
     }
   }
 }

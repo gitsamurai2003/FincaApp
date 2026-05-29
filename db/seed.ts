@@ -3,6 +3,7 @@ import * as schema from './schema';
 
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
+// Auxiliar para generar rangos de fechas fácilmente
 const generarFechasHistorial = (diasAtras: number): string[] => {
   const fechas: string[] = [];
   for (let i = diasAtras; i >= 0; i--) {
@@ -14,27 +15,10 @@ const generarFechasHistorial = (diasAtras: number): string[] => {
 };
 
 export async function seedDatabase() {
+  console.log('🌱 Iniciando super-seeding masivo y complejo...');
+
   try {
-    const dbEspecies = await db.select().from(schema.especies);
-    const idBovino = dbEspecies.find(e => e.nombre.toLowerCase() === 'bovino')?.id;
-    const idBufalino = dbEspecies.find(e => e.nombre.toLowerCase() === 'bufalino')?.id;
-    const idOvino = dbEspecies.find(e => e.nombre.toLowerCase() === 'ovino')?.id;
-    const idEquino = dbEspecies.find(e => e.nombre.toLowerCase() === 'equino')?.id;
-    const idCaprino = dbEspecies.find(e => e.nombre.toLowerCase() === 'caprino')?.id;
-
-    const dbRazas = await db.select().from(schema.razas);
-    const idMurrah = dbRazas.find(r => r.nombre.toLowerCase() === 'murrah')?.id;
-    const idMediterraneo = dbRazas.find(r => r.nombre.toLowerCase() === 'mediterráneo' || r.nombre.toLowerCase() === 'mediterraneo')?.id;
-    const idJafarabadi = dbRazas.find(r => r.nombre.toLowerCase() === 'jafarabadi')?.id;
-    const idCarora = dbRazas.find(r => r.nombre.toLowerCase() === 'carora')?.id;
-    const idBrahman = dbRazas.find(r => r.nombre.toLowerCase() === 'brahman')?.id;
-    const idMestizo = dbRazas.find(r => r.nombre.toLowerCase() === 'mestizo')?.id;
-    const idCuartoMilla = dbRazas.find(r => r.nombre.toLowerCase() === 'cuarto de milla' || r.nombre.toLowerCase() === 'cuarto milla')?.id;
-
-    if (!idBovino || !idBufalino || !idMurrah || !idMediterraneo || !idCarora) {
-      throw new Error('Base catalogs not fully loaded.');
-    }
-
+    console.log('🧹 Limpiando tablas...');
     await db.delete(schema.historialMedico);
     await db.delete(schema.produccionLeche);
     await db.delete(schema.pesajes);
@@ -43,129 +27,295 @@ export async function seedDatabase() {
     await db.delete(schema.lotes);
     await db.delete(schema.rendimientosQueso);
     await db.delete(schema.fincas);
+    await db.delete(schema.razas);
+    await db.delete(schema.especies);
+    console.log('🧹 Base de datos limpia.');
 
-    const fincaActivaId = generateId();
-    const fincaInactivaId = generateId();
-
-    await db.insert(schema.fincas).values([
-      { id: fincaActivaId, nombre: 'Hacienda El Búfalo Alegre', ubicacion: 'Machiques', activa: 1, creadoEn: Math.floor(Date.now() / 1000) },
-      { id: fincaInactivaId, nombre: 'Fundo La Esperanza', ubicacion: 'Sur del Lago', activa: 0, creadoEn: Math.floor(Date.now() / 1000) }
+    // 2. Especies fijas
+    await db.insert(schema.especies).values([
+      { id: 1, nombre: 'Bovino' },
+      { id: 2, nombre: 'Bufalino' },
     ]);
 
+    // 3. Razas expandidas
+    await db.insert(schema.razas).values([
+      { id: 1, especieId: 2, nombre: 'Murrah' },
+      { id: 2, especieId: 2, nombre: 'Mediterráneo' },
+      { id: 3, especieId: 1, nombre: 'Carora' },
+      { id: 4, especieId: 1, nombre: 'Brahman' },
+      { id: 5, especieId: 1, nombre: 'Gyr' },
+      { id: 6, especieId: 2, nombre: 'Jafarabadi' },
+    ]);
+
+    // 4. Finca
+    const fincaId = generateId();
+    await db.insert(schema.fincas).values({
+      id: fincaId,
+      nombre: 'Hacienda El Búfalo Alegre',
+      ubicacion: 'Machiques',
+      activa: 1,
+    });
+
+    // 5. Lotes operacionales segmentados
     const loteOrdeno1Id = generateId();
     const loteOrdeno2Id = generateId();
-    const loteSecasId = generateId();
+    const loteEscoterasId = generateId();
     const loteMauteraId = generateId();
     const loteBecerrosId = generateId();
-    const loteEngordeId = generateId();
-    const loteCaballerizaId = generateId();
 
     await db.insert(schema.lotes).values([
-      { id: loteOrdeno1Id, fincaId: fincaActivaId, nombre: 'Ordeño Alta Producción', descripcion: 'Animales con picos superiores a 12L diarios' },
-      { id: loteOrdeno2Id, fincaId: fincaActivaId, nombre: 'Ordeño Media / Baja', descripcion: 'Lactancias avanzadas o cola de ordeño' },
-      { id: loteSecasId, fincaId: fincaActivaId, nombre: 'Escoteras / Secas', descripcion: 'Búfalas en descanso y próximas al parto' },
-      { id: loteMauteraId, fincaId: fincaActivaId, nombre: 'Mautera y Novillas', descripcion: 'Hembras de reemplazo en desarrollo' },
-      { id: loteBecerrosId, fincaId: fincaActivaId, nombre: 'Becerros / Bucerros', descripcion: 'Crías en etapa de lactancia' },
-      { id: loteEngordeId, fincaId: fincaInactivaId, nombre: 'Potrero Engorde Ceba', descripcion: 'Levante de machos' },
-      { id: loteCaballerizaId, fincaId: fincaActivaId, nombre: 'Caballeriza Principal', descripcion: 'Equinos de trabajo' }
+      { id: loteOrdeno1Id, fincaId, nombre: 'Ordeño Alta Producción', descripcion: 'Animales con picos superiores a 12L diarios' },
+      { id: loteOrdeno2Id, fincaId, nombre: 'Ordeño Media / Baja', descripcion: 'Lactancias avanzadas o cola de ordeño' },
+      { id: loteEscoterasId, fincaId, nombre: 'Escoteras / Secas', descripcion: 'Búfalas en descanso y próximas al parto' },
+      { id: loteMauteraId, fincaId, nombre: 'Mautera y Novillas', descripcion: 'Hembras de reemplazo en desarrollo' },
+      { id: loteBecerrosId, fincaId, nombre: 'Becerros / Bucerros', descripcion: 'Crías en etapa de lactancia' },
     ]);
 
+    // 6. Inserción Masiva de Animales (Multiplicado por más de 10)
+    console.log('插入 Animales masivos...');
     const animalesData: any[] = [];
-    const timestampAhora = Math.floor(Date.now() / 1000);
+    
+    // Arrays para guardar IDs por categorías para los registros relacionales posteriores
+    const bufalasOrdenoIds: string[] = [];
+    const bufalasSecasIds: string[] = [];
+    const mautasIds: string[] = [];
+    const padrotesIds: string[] = [];
 
-    const padreBufaloId = generateId();
-    const madreBufalaId = generateId();
-    const buvilloId = generateId();
+    // Generar 15 Búfalas de Ordeño de Alta Producción (Murrah)
+    for (let i = 1; i <= 15; i++) {
+      const id = generateId();
+      bufalasOrdenoIds.push(id);
+      animalesData.push({
+        id, fincaId, especieId: 2, razaId: 1, loteId: loteOrdeno1Id,
+        areteCodigo: `BM-1${String(i).padStart(2, '0')}`,
+        nombre: `Mariposa ${i}`, fechaNacimiento: `2019-0${(i % 9) + 1}-10`,
+        sexo: 'F', pesoInicial: 420.0 + (i * 5), categoria: 'Búfala',
+        proposito: 'Leche', estado: 'Activo', notas: `Grupo élite de ordeño mecanizado. Fila ${i}`
+      });
+    }
 
-    animalesData.push(
-      { id: padreBufaloId, fincaId: fincaActivaId, especieId: idBufalino, razaId: idMurrah, loteId: loteSecasId, areteCodigo: 'PAD-001', nombre: 'Cacique', fechaNacimiento: '2019-01-15', sexo: 'M', pesoInicial: 750.0, categoria: 'Padrote', proposito: 'Genetica_Pura', estado: 'Activo', creadoEn: timestampAhora },
-      { id: madreBufalaId, fincaId: fincaActivaId, especieId: idBufalino, razaId: idMurrah, loteId: loteOrdeno1Id, areteCodigo: 'BM-101', nombre: 'Reina', fechaNacimiento: '2020-05-20', sexo: 'F', pesoInicial: 550.0, categoria: 'Búfala', proposito: 'Leche', estado: 'Activo', creadoEn: timestampAhora },
-      { id: buvilloId, fincaId: fincaActivaId, especieId: idBufalino, razaId: idMurrah, loteId: loteBecerrosId, areteCodigo: 'BC-201', nombre: 'Principito', fechaNacimiento: '2025-11-10', sexo: 'M', pesoInicial: 45.0, categoria: 'Buvillo', proposito: 'Doble_Proposito', estado: 'Activo', madreId: madreBufalaId, padreId: padreBufaloId, creadoEn: timestampAhora }
-    );
+    // Generar 15 Búfalas de Ordeño de Media/Baja (Mediterráneo)
+    for (let i = 1; i <= 15; i++) {
+      const id = generateId();
+      bufalasOrdenoIds.push(id);
+      animalesData.push({
+        id, fincaId, especieId: 2, razaId: 2, loteId: loteOrdeno2Id,
+        areteCodigo: `BZ-2${String(i).padStart(2, '0')}`,
+        nombre: `Gitana ${i}`, fechaNacimiento: `2020-0${(i % 9) + 1}-22`,
+        sexo: 'F', pesoInicial: 410.0 + (i * 4), categoria: 'Búfala',
+        proposito: 'Doble_Proposito', estado: 'Activo', notas: `Producción estable a pastoreo. Fila ${i}`
+      });
+    }
 
-    const idOvinoFinal = idOvino || idBovino;
-    const idEquinoFinal = idEquino || idBovino;
-    const idCaprinoFinal = idCaprino || idBovino;
-    const idBrahmanFinal = idBrahman || idCarora;
-    const idMestizoFinal = idMestizo || idCarora;
-    const idCuartoMillaFinal = idCuartoMilla || idCarora;
-    const idJafarabadiFinal = idJafarabadi || idMurrah;
-
-    animalesData.push(
-      { id: generateId(), fincaId: fincaActivaId, especieId: idBovino, razaId: idCarora, loteId: null, areteCodigo: 'VAC-099', nombre: 'Vieja Carora', fechaNacimiento: '2015-02-10', sexo: 'F', pesoInicial: 420.0, categoria: 'Vaca', proposito: 'Leche', estado: 'Fallecido', notas: 'Muerte natural senil', creadoEn: timestampAhora },
-      { id: generateId(), fincaId: fincaActivaId, especieId: idBovino, razaId: idBrahmanFinal, loteId: null, areteCodigo: 'NOV-088', nombre: 'Macho Bravo', fechaNacimiento: '2023-01-10', sexo: 'M', pesoInicial: 210.0, categoria: 'Novillo', proposito: 'Carne', estado: 'Vendido', notas: 'Comercializado localmente', creadoEn: timestampAhora },
-      { id: generateId(), fincaId: fincaActivaId, especieId: idOvinoFinal, razaId: idMestizoFinal, loteId: null, areteCodigo: 'OV-001', nombre: 'Copito', fechaNacimiento: '2025-01-01', sexo: 'M', pesoInicial: 22.0, categoria: 'Cordero', proposito: 'Carne', estado: 'Consumo_Interno', notas: 'Consumo trabajadores', creadoEn: timestampAhora },
-      { id: generateId(), fincaId: fincaActivaId, especieId: idEquinoFinal, razaId: idCuartoMillaFinal, loteId: loteCaballerizaId, areteCodigo: 'CAB-001', nombre: 'Relámpago', fechaNacimiento: '2018-08-15', sexo: 'M', pesoInicial: 460.0, categoria: 'Caballo', proposito: 'Trabajo', estado: 'Activo', creadoEn: timestampAhora },
-      { id: generateId(), fincaId: fincaActivaId, especieId: idCaprinoFinal, razaId: idMestizoFinal, loteId: null, areteCodigo: 'CAP-001', nombre: 'Cabra Uno', fechaNacimiento: '2024-03-05', sexo: 'F', pesoInicial: 35.0, categoria: 'Cabra', proposito: 'Doble_Proposito', estado: 'Activo', creadoEn: timestampAhora }
-    );
-
+    // Generar 10 Búfalas Escoteras / Próximas
     for (let i = 1; i <= 10; i++) {
+      const id = generateId();
+      bufalasSecasIds.push(id);
       animalesData.push({
-        id: generateId(), fincaId: fincaActivaId, especieId: idBufalino, razaId: idMediterraneo, loteId: loteOrdeno1Id, areteCodigo: `BZ-1${String(i).padStart(2, '0')}`, nombre: `Mariposa ${i}`, fechaNacimiento: `2021-03-${String(i + 5).padStart(2, '0')}`, sexo: 'F', pesoInicial: 430.0 + (i * 3), categoria: 'Búfala', proposito: 'Leche', estado: 'Activo', creadoEn: timestampAhora
+        id, fincaId, especieId: 2, razaId: 1, loteId: loteEscoterasId,
+        areteCodigo: `BE-3${String(i).padStart(2, '0')}`,
+        nombre: `Seca ${i}`, fechaNacimiento: `2018-11-${String(i + 5).padStart(2, '0')}`,
+        sexo: 'F', pesoInicial: 480.0 + (i * 3), categoria: 'Búfala',
+        proposito: 'Leche', estado: 'Activo', notas: `Preñadas confirmadas por eco, periodo de secado.`
       });
     }
 
-    for (let i = 1; i <= 5; i++) {
+    // Generar 12 Mautas / Novillas (Crecimiento para cálculo de GDP)
+    for (let i = 1; i <= 12; i++) {
+      const id = generateId();
+      mautasIds.push(id);
       animalesData.push({
-        id: generateId(), fincaId: fincaActivaId, especieId: idBufalino, razaId: idJafarabadiFinal, loteId: loteOrdeno2Id, areteCodigo: `BJ-2${String(i).padStart(2, '0')}`, nombre: `Jafara ${i}`, fechaNacimiento: `2022-04-${String(i + 2).padStart(2, '0')}`, sexo: 'F', pesoInicial: 450.0 + (i * 2), categoria: 'Búfala', proposito: 'Doble_Proposito', estado: 'Activo', creadoEn: timestampAhora
+        id, fincaId, especieId: 1, razaId: 3, loteId: loteMauteraId, // Bovinos Carora
+        areteCodigo: `VC-4${String(i).padStart(2, '0')}`,
+        nombre: `Carorana ${i}`, fechaNacimiento: `2024-10-${String(i + 2).padStart(2, '0')}`,
+        sexo: 'F', pesoInicial: 160.0 + (i * 8), categoria: 'Mauta',
+        proposito: 'Leche', estado: 'Activo', notas: `Lote de levante con pesajes mensuales estrictos.`
       });
     }
 
-    for (let i = 1; i <= 5; i++) {
+    // Generar 3 Padrotes
+    for (let i = 1; i <= 3; i++) {
+      const id = generateId();
+      padrotesIds.push(id);
       animalesData.push({
-        id: generateId(), fincaId: fincaInactivaId, especieId: idBovino, razaId: idBrahmanFinal, loteId: loteEngordeId, areteCodigo: `BR-3${String(i).padStart(2, '0')}`, nombre: `Toro Ceba ${i}`, fechaNacimiento: `2023-05-${String(i + 1).padStart(2, '0')}`, sexo: 'M', pesoInicial: 280.0 + (i * 10), categoria: 'Toro', proposito: 'Carne', estado: 'Activo', creadoEn: timestampAhora
+        id, fincaId, especieId: 2, razaId: i === 3 ? 6 : 1, loteId: loteEscoterasId,
+        areteCodigo: `PAD-0${i}`,
+        nombre: i === 1 ? 'General' : i === 2 ? 'Coronel' : 'Cacique',
+        fechaNacimiento: `2018-01-05`, sexo: 'M', pesoInicial: 650.0 + (i * 20),
+        categoria: 'Padrote', proposito: 'Genetica_Pura', estado: 'Activo',
+        notas: `Reproductor asignado a potreros extensivos.`
       });
     }
 
-    await db.insert(schema.animales).values(animalesData);
+    await db.insert(schema.animales).values(animalesData as any);
 
+
+    // 7. Pesajes Históricos Complejos (Curvas de Crecimiento GPD)
+    console.log('插入 Historial de Pesajes Secuenciales...');
     const pesajesData: any[] = [];
-    pesajesData.push(
-      { id: generateId(), animalId: buvilloId, peso: 45.0, fechaPesaje: '2025-11-10', condicionCorporal: 3, notes: 'Peso al nacer' },
-      { id: generateId(), animalId: buvilloId, peso: 78.5, fechaPesaje: '2026-01-15', condicionCorporal: 4, notes: 'Control bimensual' },
-      { id: generateId(), animalId: buvilloId, peso: 112.0, fechaPesaje: '2026-03-20', condicionCorporal: 4, notes: 'Control desarrollo' },
-      { id: generateId(), animalId: buvilloId, peso: 145.2, fechaPesaje: '2026-05-22', condicionCorporal: 4, notes: 'Pesaje previo a destete' }
-    );
-    await db.insert(schema.pesajes).values(pesajesData);
+    const meses = ['2026-02-15', '2026-03-15', '2026-04-15', '2026-05-15'];
 
-    const produccionData: any[] = [];
-    const ultimosDias = generarFechasHistorial(5);
-    ultimosDias.forEach(fecha => {
-      produccionData.push(
-        { id: generateId(), animalId: madreBufalaId, fecha, litros: parseFloat((6.2 + Math.random()).toFixed(1)), turno: 'M', notas: 'Normal' },
-        { id: generateId(), animalId: madreBufalaId, fecha, litros: parseFloat((4.1 + Math.random()).toFixed(1)), turno: 'T', notas: 'Normal' },
-        { id: generateId(), animalId: madreBufalaId, fecha, litros: parseFloat((1.8 + Math.random() * 0.5).toFixed(1)), turno: 'N', notas: 'Apoyo bucerro' }
+    // Simular ganancia de peso incremental y lógica para las mautas
+    mautasIds.forEach((id, index) => {
+      let pesoSimulado = 180 + (index * 3);
+      meses.forEach((fecha, mi) => {
+        pesoSimulado += 18 + Math.floor(Math.random() * 8); // Incremento realista mensual (~600g a 800g diarios)
+        pesajesData.push({
+          id: generateId(),
+          animalId: id,
+          peso: parseFloat(pesoSimulado.toFixed(1)),
+          fechaPesaje: fecha,
+          condicionCorporal: mi === 3 ? 4 : 3
+        });
+      });
+    });
+
+    // Pesajes para los toros principales
+    padrotesIds.forEach(id => {
+      pesajesData.push(
+        { id: generateId(), animalId: id, peso: 710.0, fechaPesaje: '2026-02-01', condicionCorporal: 4 },
+        { id: generateId(), animalId: id, peso: 728.5, fechaPesaje: '2026-05-01', condicionCorporal: 4 }
       );
     });
-    await db.insert(schema.produccionLeche).values(produccionData);
 
+    await db.insert(schema.pesajes).values(pesajesData);
+
+
+    // 8. Producción Masiva de Leche (Curva de los últimos 15 días)
+    console.log('插入 Serie Temporal de Producción de Leche (Últimos 15 días x 30 búfalas)...');
+    const produccionData: any[] = [];
+    const ultimos15Dias = generarFechasHistorial(14); // Genera array de strings YYYY-MM-DD
+
+    bufalasOrdenoIds.forEach((id, bIndex) => {
+      // Factor base de producción por animal (unas dan más, otras menos)
+      const factorBase = bIndex < 15 ? 10.5 + (bIndex * 0.2) : 7.0 + (bIndex * 0.15);
+
+      ultimos15Dias.forEach(fecha => {
+        // Fluctuación aleatoria diaria sutil del 10%
+        const variacionM = (Math.random() * 1.6) - 0.8;
+        const variacionT = (Math.random() * 1.2) - 0.6;
+
+        // Turno Mañana (60% de la leche)
+        produccionData.push({
+          id: generateId(),
+          animalId: id,
+          fecha,
+          litros: parseFloat(Math.max(3.0, (factorBase * 0.6) + variacionM).toFixed(1)),
+          turno: 'M'
+        });
+
+        // Turno Tarde (40% de la leche)
+        produccionData.push({
+          id: generateId(),
+          animalId: id,
+          fecha,
+          litros: parseFloat(Math.max(2.0, (factorBase * 0.4) + variacionT).toFixed(1)),
+          turno: 'T'
+        });
+      });
+    });
+
+    // Inserción por lotes para evitar desbordes de memoria o de parámetros SQL
+    const chunk = 500;
+    for (let i = 0; i < produccionData.length; i += chunk) {
+      await db.insert(schema.produccionLeche).values(produccionData.slice(i, i + chunk));
+    }
+
+
+    // 9. Historial Médico con Retiros Sanitarios y Controles
+    console.log('插入 Historial Médico Complejo...');
     const registrosMedicos: any[] = [];
+    
+    // Casos clínicos específicos
     registrosMedicos.push(
-      { id: generateId(), animalId: padreBufaloId, tipoManejo: 'Vacunacion_Obligatoria', diagnostico: null, medicamento: 'Aftovax', dosis: '2ml SC', fechaAplicacion: '2026-05-01', diasRetiroLeche: 0, diasRetiroCarne: 21, notas: 'Ciclo nacional' },
-      { id: generateId(), animalId: madreBufalaId, tipoManejo: 'Tratamiento_Enfermedad', diagnostico: 'Mastitis subclínica', medicamento: 'Mastilac M', dosis: '1 jeringa intramamaria', fechaAplicacion: '2026-05-18', diasRetiroLeche: 4, diasRetiroCarne: 15, notas: 'Separar leche de tanque' },
-      { id: generateId(), animalId: madreBufalaId, tipoManejo: 'Desparasitacion', diagnostico: 'Rutina', medicamento: 'Ivermectina 1%', dosis: '1ml x 50kg SC', fechaAplicacion: '2026-04-15', diasRetiroLeche: 28, diasRetiroCarne: 35, notas: 'Fin de temporada lluviosa' },
-      { id: generateId(), animalId: buvilloId, tipoManejo: 'Vitamina', diagnostico: null, medicamento: 'Catosal B12', dosis: '5ml IM', fechaAplicacion: '2026-05-10', diasRetiroLeche: 0, diasRetiroCarne: 0, notas: 'Estímulo de crecimiento' }
+      {
+        id: generateId(), animalId: bufalasOrdenoIds[0],
+        tipoManejo: 'Tratamiento_Enfermedad', diagnostico: 'Mastitis aguda cuarto anterior izquierdo',
+        medicamento: 'Ubrolexin M intramamario', dosis: '1 jeringa c/24h',
+        fechaAplicacion: '2026-05-20', diasRetiroLeche: 5, diasRetiroCarne: 10,
+        notas: 'Alerta: Ordeño en balde separado obligatorio.'
+      },
+      {
+        id: generateId(), animalId: bufalasOrdenoIds[4],
+        tipoManejo: 'Tratamiento_Enfermedad', diagnostico: 'Papiromatosis cutánea (verrugas)',
+        medicamento: 'Histovac (Autovacuna)', dosis: '5 ml Subcutáneo',
+        fechaAplicacion: '2026-05-10', diasRetiroLeche: 0, diasRetiroCarne: 0,
+        notas: 'Segunda dosis de control inmunológico.'
+      },
+      {
+        id: generateId(), animalId: mautasIds[2],
+        tipoManejo: 'Tratamiento_Enfermedad', diagnostico: 'Parásitos gastrointestinales',
+        medicamento: 'Ivermectina 1%', dosis: '1 ml por cada 50kg',
+        fechaAplicacion: '2026-04-12', diasRetiroLeche: 0, diasRetiroCarne: 28,
+        notas: 'Lote completo desparasitado preventivo.'
+      }
     );
+
+    // Vacunación Masiva de Aftosa y Rabia a todo el rebaño de ordeño (Simulación de manejo sanitario colectivo)
+    bufalasOrdenoIds.forEach((id, index) => {
+      if (index % 3 === 0) { // Aplicado de forma aleatoria estructurada
+        registrosMedicos.push({
+          id: generateId(),
+          animalId: id,
+          tipoManejo: 'Vacunacion',
+          diagnostico: 'Ciclo Obligatorio INSAI',
+          medicamento: 'Aftogan + Rabogan',
+          dosis: '2 ml Intramuscular',
+          fechaAplicacion: '2026-05-01',
+          diasRetiroLeche: 0,
+          diasRetiroCarne: 0,
+          notes: 'Esquema nacional de erradicación de Fiebre Aftosa.'
+        });
+      }
+    });
+
     await db.insert(schema.historialMedico).values(registrosMedicos);
 
+
+    // 10. Eventos Reproductivos Continuos (Ciclos de servicio)
+    console.log('插入 Ciclos Reproductivos Dinámicos...');
     const eventosReproductivos: any[] = [];
-    eventosReproductivos.push(
-      { id: generateId(), animalId: madreBufalaId, tipoEvento: 'Celo_Detectado', fechaEvento: '2024-11-30', resultadoPalpacion: null, toroOPajuela: null, fechaProbableParto: null, detallesParto: null, notas: 'Celo estral claro' },
-      { id: generateId(), animalId: madreBufalaId, tipoEvento: 'Monta_Natural', fechaEvento: '2024-12-01', resultadoPalpacion: null, toroOPajuela: 'Cacique (PAD-001)', fechaProbableParto: null, detallesParto: null, notas: 'Servicio directo potrero' },
-      { id: generateId(), animalId: madreBufalaId, tipoEvento: 'Palpacion_Diagnostico', fechaEvento: '2025-02-05', resultadoPalpacion: 'Preñada', toroOPajuela: null, fechaProbableParto: '2025-11-12', detallesParto: null, notas: 'Confirmación preñez positiva' },
-      { id: generateId(), animalId: madreBufalaId, tipoEvento: 'Parto', fechaEvento: '2025-11-10', resultadoPalpacion: null, toroOPajuela: null, fechaProbableParto: null, detallesParto: 'Normal', notas: 'Bucerro macho sano vivo' },
-      { id: generateId(), animalId: madreBufalaId, tipoEvento: 'Inseminacion_Artificial', fechaEvento: '2026-03-20', resultadoPalpacion: null, toroOPajuela: 'Semen Criogénico Italiano - MI09', fechaProbableParto: null, detallesParto: null, notas: 'Protocolo IATF' },
-      { id: generateId(), animalId: madreBufalaId, tipoEvento: 'Palpacion_Diagnostico', fechaEvento: '2026-05-15', resultadoPalpacion: 'Vacia', toroOPajuela: null, fechaProbableParto: null, detallesParto: null, notas: 'Repetir protocolo próximamente' },
-      { id: generateId(), animalId: padreBufaloId, tipoEvento: 'Palpacion_Diagnostico', fechaEvento: '2025-08-10', resultadoPalpacion: 'Dudosa', toroOPajuela: null, fechaProbableParto: null, detallesParto: null, notas: 'Evaluación andrológica rutinaria' }
-    );
+
+    // Registrar Inseminaciones Artificiales y Palpaciones de confirmación
+    bufalasOrdenoIds.slice(0, 10).forEach((id, index) => {
+      const fechaIA = `2026-01-${10 + index}`;
+      const fechaConfirmacion = `2026-03-${12 + index}`;
+      
+      // Evento 1: La Inseminación
+      eventosReproductivos.push({
+        id: generateId(),
+        animalId: id,
+        tipoEvento: 'Inseminacion_Artificial',
+        fechaEvento: fechaIA,
+        toroOPajuela: 'Semen Congelado Italiano - Taurus 09'
+      });
+
+      // Evento 2: Palpación rectal de confirmación a los 60 días (Alternando Positivos y Vacías)
+      eventosReproductivos.push({
+        id: generateId(),
+        animalId: id,
+        tipoEvento: 'Palpacion',
+        fechaEvento: fechaConfirmacion,
+        toroOPajuela: index % 4 !== 0 ? 'Confirmado PREÑADA' : 'Vacía / Repetir Celo'
+      });
+    });
+
     await db.insert(schema.eventosReproductivos).values(eventosReproductivos);
 
+
+    // 11. Rendimiento Quesero de la Finca (Últimas 5 semanas consecutivas)
+    console.log('插入 Historial de Rendimiento Quesero Semanal...');
     await db.insert(schema.rendimientosQueso).values([
-      { id: generateId(), fincaId: fincaActivaId, fechaInicio: '2026-05-01', fechaFin: '2026-05-07', totalLitros: 1200.0, kgQueso: 222.2, litrosPorKg: 5.4, notas: 'Semana de alta densidad de sólidos', creadoEn: timestampAhora },
-      { id: generateId(), fincaId: fincaActivaId, fechaInicio: '2026-05-08', fechaFin: '2026-05-14', totalLitros: 1350.0, kgQueso: 245.5, litrosPorKg: 5.5, notas: 'Variación por lluvias leves', creadoEn: timestampAhora }
+      { id: generateId(), fincaId, fechaInicio: '2026-04-13', fechaFin: '2026-04-19', totalLitros: 1350.0, kgQueso: 241.0, litrosPorKg: 5.6, notas: 'Semana 15. Óptimo punto de sal.' },
+      { id: generateId(), fincaId, fechaInicio: '2026-04-20', fechaFin: '2026-04-26', totalLitros: 1410.0, kgQueso: 256.3, litrosPorKg: 5.5, notas: 'Semana 16. Mayor proporción sólidos totales.' },
+      { id: generateId(), fincaId, fechaInicio: '2026-04-27', fechaFin: '2026-05-03', totalLitros: 1480.0, kgQueso: 274.0, litrosPorKg: 5.4, notas: 'Semana 17. Despacho directo a distribuidores.' },
+      { id: generateId(), fincaId, fechaInicio: '2026-05-04', fechaFin: '2026-05-10', totalLitros: 1520.0, kgQueso: 281.4, litrosPorKg: 5.4, notas: 'Semana 18. Inicio de lluvias, mejora pasto.' },
+      { id: generateId(), fincaId, fechaInicio: '2026-05-11', fechaFin: '2026-05-17', totalLitros: 1590.0, kgQueso: 289.0, litrosPorKg: 5.5, notas: 'Semana 19. Registro de picos de lactancia.' },
     ]);
 
+    console.log('🎉 ¡Super-Seeding completado con éxito absoluto! Base de datos lista para pruebas extremas.');
   } catch (error) {
+    console.error('❌ Error fatal inyectando el seed masivo a la base de datos:', error);
     throw error;
   }
 }

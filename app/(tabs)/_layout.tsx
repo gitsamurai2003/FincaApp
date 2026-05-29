@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { BookOpen, Home, ListTree } from 'lucide-react-native';
+import { BookOpen, Home, ListTree, MapPin } from 'lucide-react-native';
 import React from 'react';
 import { Platform } from 'react-native';
 
@@ -58,6 +58,13 @@ export default function TabLayout() {
         }}
       />
 
+      <Tabs.Screen
+  name="mapa"
+  options={{
+    title: 'Mapa',
+    tabBarIcon: ({ color }) => <MapPin size={20} color={color} />,
+  }}
+/>
       {/* --- PANTALLAS CON BARRA FLOTANTE PERO OCULTAS DE LOS MENÚS SELECCIONABLES --- */}
 
       <Tabs.Screen
