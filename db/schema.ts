@@ -149,3 +149,9 @@ export const historialMedico = sqliteTable('historial_medico', {
   
   notas: text('notas'),
 });
+
+export const configuracionApp = sqliteTable('configuracion_app', {
+  id: integer('id').primaryKey(),
+  estadoLicencia: text('estado_licencia').notNull(),
+  fechaInicioPrueba: integer('fecha_inicio_prueba').notNull(),
+});

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import * as Print from 'expo-print';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { ChevronDown, ChevronUp, FileText, Filter, Search, X } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, FileText, Filter, Plus, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -47,6 +47,7 @@ type AnimalAgrupado = {
 
 export default function HistorialPesajesScreen() {
   const { arete } = useLocalSearchParams<{ arete?: string }>();
+  const router = useRouter();
   const [dataAgrupada, setDataAgrupada] = useState<AnimalAgrupado[]>([]);
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
@@ -432,6 +433,7 @@ export default function HistorialPesajesScreen() {
             placeholderTextColor="#94a3b8"
           />
         </View>
+        
         <TouchableOpacity
           style={[styles.filterBtn, (filtroEspecie !== null || filtroRaza !== null || filtroLote !== null || filtroEstado !== 'Activo') ? styles.filterBtnActive : null]}
           onPress={() => setModalFiltrosVisible(true)}
@@ -439,9 +441,14 @@ export default function HistorialPesajesScreen() {
           <Filter color={(filtroEspecie !== null || filtroRaza !== null || filtroLote !== null || filtroEstado !== 'Activo') ? '#fff' : '#475569'} size={22} />
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.pdfBtn} onPress={exportarPDF}>
-          <FileText color="#fff" size={22} />
+                <TouchableOpacity style={styles.pdfBtn} onPress={exportarPDF}>
+          <FileText color="#065f46" size={22} />
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/produccion')}>
+          <Plus color="#fff" size={22} />
+        </TouchableOpacity>
+        
       </View>
 
       {(filtroEspecie || filtroRaza || filtroLote || filtroEstado !== 'Todos') && (
@@ -602,7 +609,16 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, height: 44, fontSize: 15, color: '#1e293b' },
   filterBtn: { width: 44, height: 44, backgroundColor: '#fff', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
   filterBtnActive: { backgroundColor: '#065f46', borderColor: '#065f46' },
-  pdfBtn: { width: 44, height: 44, backgroundColor: '#065f46', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#065f46' },
+  addBtn: { width: 44, height: 44, backgroundColor: '#065f46', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#065f46', marginRight: 8 },
+  pdfBtn: {     width: 44,
+    height: 44,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    marginRight: 8, },
   activeFiltersRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 8, alignItems: 'center' },
   activeFiltersText: { fontSize: 13, color: '#065f46', fontWeight: '600' },
   clearLink: { fontSize: 13, color: '#dc2626', fontWeight: '700' },

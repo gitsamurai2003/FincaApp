@@ -7,11 +7,6 @@
     "icon": "./assets/images/logos.png",
     "scheme": "fincaapp",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/images/splash-logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#065F46"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -31,6 +26,14 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-logo.png",
+          "backgroundColor": "#065F46",
+          "imageWidth": 300
+        }
+      ],
       [
         "@rnmapbox/maps",
         {

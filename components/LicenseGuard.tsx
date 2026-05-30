@@ -19,8 +19,6 @@ export const LicenseGuard: React.FC<LicenseGuardProps> = ({ children }) => {
   }, []);
 
   const checkInitialState = async () => {
-    // ⚠️ AGREGA ESTA LÍNEA TEMPORALMENTE PARA BORRAR LA MEMORIA:
-  await require('@react-native-async-storage/async-storage').default.clear();
     const currentState = await LicenseManager.checkLicenseStatus();
     setAppState(currentState);
   };
@@ -41,7 +39,6 @@ export const LicenseGuard: React.FC<LicenseGuardProps> = ({ children }) => {
     }
   };
 
-  // 1. Pantalla de carga mientras se lee AsyncStorage
   if (appState === null) {
     return (
       <View style={styles.centerContainer}>
@@ -50,12 +47,10 @@ export const LicenseGuard: React.FC<LicenseGuardProps> = ({ children }) => {
     );
   }
 
-  // 2. Si tiene licencia permanente o el trial está activo, mostramos la app real
   if (appState === LicenseState.UNLOCKED_PERMANENT || appState === LicenseState.TRIAL_ACTIVE) {
     return <>{children}</>;
   }
 
-  // 3. Si no, mostramos la pantalla de bloqueo
   return (
     <View style={styles.overlayContainer}>
       <View style={styles.card}>
@@ -72,10 +67,8 @@ export const LicenseGuard: React.FC<LicenseGuardProps> = ({ children }) => {
           <Text style={styles.emailText}>{CONTACT_EMAIL}</Text>
         </Text>
 
-        {/* MODO INICIAL: Botones de opciones */}
         {viewMode === 'INITIAL' && (
           <View style={styles.buttonContainer}>
-            {/* Solo mostramos el botón de Trial si es la primera vez */}
             {appState === LicenseState.FIRST_LAUNCH && (
               <TouchableOpacity style={styles.buttonTrial} onPress={handleStartTrial}>
                 <Text style={styles.buttonText}>Desbloquear 10 días</Text>
@@ -91,7 +84,6 @@ export const LicenseGuard: React.FC<LicenseGuardProps> = ({ children }) => {
           </View>
         )}
 
-        {/* MODO INPUT: Formulario para ingresar el código */}
         {viewMode === 'INPUT_CODE' && (
           <View style={styles.inputContainer}>
             <TextInput
@@ -135,7 +127,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#000000EE', // Fondo oscuro translúcido
+    backgroundColor: '#000000EE',
     padding: 20,
   },
   card: {
@@ -171,11 +163,11 @@ const styles = StyleSheet.create({
   },
   emailText: {
     fontWeight: 'bold',
-    color: '#2E7D32', // Verde Finca
+    color: '#2E7D32',
   },
   buttonContainer: {
     width: '100%',
-    gap: 15, // Si usas una versión antigua de React Native, cambia esto por margins en los botones
+    gap: 15,
   },
   buttonTrial: {
     backgroundColor: '#2E7D32',

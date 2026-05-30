@@ -219,7 +219,7 @@ export default function RegistrarSanidadScreen() {
           onPress={() => setModoRapido((v) => !v)}
         >
           <Zap size={14} color={modoRapido ? '#fff' : '#dc2626'} />
-          <Text style={[styles.modoRapidoText, modoRapido && { color: '#fff' }]}>Lote</Text>
+          <Text style={[styles.modoRapidoText, modoRapido && { color: '#fff' }]}>Rápido</Text>
         </TouchableOpacity>
       </View>
 
@@ -355,7 +355,7 @@ export default function RegistrarSanidadScreen() {
           <View style={styles.hintCard}>
             <Zap size={14} color="#dc2626" />
             <Text style={styles.hintText}>
-              Modo lote activo: Se preservará el medicamento, dosis y periodos de retiro para registrar rápidamente al siguiente animal.
+              Modo rápido activo: Se preservará el medicamento, dosis y periodos de retiro para registrar rápidamente al siguiente animal.
             </Text>
           </View>
         )}

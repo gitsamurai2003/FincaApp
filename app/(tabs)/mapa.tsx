@@ -295,7 +295,7 @@ export default function MapaFincaAvanzadoScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerAnim = useRef(new Animated.Value(0)).current;
   const DRAWER_HEIGHT = 560;
-  
+  const [ubicacionDispositivo, setUbicacionDispositivo] = useState<Coordenada | null>(null);
   const viewShotRef = useRef<any>(null);
   
   // Ref ahora apunta a Mapbox.MapView
@@ -868,7 +868,20 @@ export default function MapaFincaAvanzadoScreen() {
             </Mapbox.PointAnnotation>
           ))}
           
-          <Mapbox.UserLocation visible={true} />
+      <Mapbox.UserLocation 
+            visible={true} 
+            onUpdate={(location) => {
+              // Solo actualizamos el estado la primera vez que capta el GPS
+              // De esta forma el mapa vuela a ti, pero luego te permite mover el mapa con el dedo sin regresarte a la fuerza.
+              if (!ubicacionDispositivo && location?.coords) {
+                setUbicacionDispositivo({
+                  latitude: location.coords.latitude,
+                  longitude: location.coords.longitude
+                });
+              }
+            }} 
+          />
+        
         </Mapbox.MapView>
 
         {/* Etiqueta central flotante (Ha) */}
@@ -938,7 +951,7 @@ export default function MapaFincaAvanzadoScreen() {
                 onPress={() => setModoDivision('POR_CANTIDAD')}
               >
                 <Text style={[styles.toggleText, modoDivision === 'POR_CANTIDAD' && styles.toggleTextActive]}>
-                  <Target size={12} /> Cantidad
+                  <Target color="#fff" size={12} /> Cantidad
                 </Text>
               </TouchableOpacity>
             </View>

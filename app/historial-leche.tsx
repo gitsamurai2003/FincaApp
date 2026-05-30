@@ -1,8 +1,8 @@
 import { and, desc, eq, gte, lte, SQL } from 'drizzle-orm';
 import * as Print from 'expo-print';
-import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { FileText, Filter, Search } from 'lucide-react-native';
+import { FileText, Filter, Plus, Search } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,6 +34,7 @@ type RegistroLeche = {
 };
 
 export default function HistorialLecheScreen() {
+  const router = useRouter();
   const { arete } = useLocalSearchParams<{ arete?: string }>();
   const [registros, setRegistros] = useState<RegistroLeche[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -381,6 +382,13 @@ const nombreRaza = razaSeleccionada ? razaSeleccionada.nombre : 'Todas';
             <FileText color="#065f46" size={20} />
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.iconButtonAdd} 
+          onPress={() => router.push('/produccion')}
+        >
+          <Plus color="#ffffff" size={20} />
+        </TouchableOpacity>
       </View>
 
       {mostrarFiltros && (
@@ -568,16 +576,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#065f46',
     borderColor: '#065f46',
   },
-  iconButtonPdf: {
-    width: 44,
-    height: 44,
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-  },
+
 advancedFiltersCard: {
   backgroundColor: '#fff',
   marginHorizontal: 16,
@@ -724,4 +723,22 @@ btnAplicarFiltros: {
   },
   modalBtnDisabled: { backgroundColor: '#bfdbfe' },
   modalBtnSaveText: { fontWeight: '700', color: '#fff' },
+  iconButtonPdf: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  iconButtonAdd: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#065f46',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

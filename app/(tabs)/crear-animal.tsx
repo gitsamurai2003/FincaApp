@@ -2,8 +2,8 @@
 import { eq } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ArrowLeft, Calendar, FileText, Hash, Scale, Tag, Users } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, Calendar, FileText, Hash, Scale, Tag, Users, Zap } from 'lucide-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import {
   CATEGORIAS_AGRUPADAS,
@@ -34,6 +34,8 @@ interface LoteDB {
 export default function CrearAnimalScreen() {
   const router = useRouter();
  
+  const areteInputRef = useRef<TextInput>(null);
+
   const [listaEspecies, setListaEspecies] = useState<EspecieDB[]>([]);
   const [listaRazas, setListaRazas] = useState<RazaDB[]>([]);
   const [listaLotes, setListaLotes] = useState<LoteDB[]>([]);
@@ -55,118 +57,84 @@ export default function CrearAnimalScreen() {
  
   const [fincaActivaId, setFincaActivaId] = useState<string | null>(null);
   const [categoria, setCategoria] = useState<CategoriaAnimal>('Becerra');
+  
+  // ⚡ Estados Modo Rápido y Guardado
   const [guardando, setGuardando] = useState(false);
+  const [modoRapido, setModoRapido] = useState(false);
+  const [guardadosHoy, setGuardadosHoy] = useState(0);
 
   const propositosOpciones = ['Leche', 'Carne', 'Doble_Proposito', 'Trabajo', 'Genetica_Pura'];
 
-  useEffect(() => {
-    async function inicializarComponente() {
-      try {
-        const fincaActiva = await db.select().from(fincas).where(eq(fincas.activa, 1)).limit(1);
-        if (fincaActiva.length === 0) {
-          Alert.alert('Atención', 'No hay ninguna finca activa seleccionada. Por favor activa una finca primero.');
-          router.back();
-          return;
-        }
-        const fId = fincaActiva[0].id;
-        setFincaActivaId(fId);
-
-        const dbEspecies = await db.select().from(especies);
-        const dbRazas = await db.select().from(razas);
-        const dbLotes = await db.select().from(lotes).where(eq(lotes.fincaId, fId));
-
-        setListaEspecies(dbEspecies);
-        setListaRazas(dbRazas);
-        setListaLotes(dbLotes);
-
-        if (dbEspecies.length > 0) {
-          setEspecieSeleccionada(dbEspecies[0].id);
-        }
-      } catch (error) {
-        Alert.alert('Error', 'No se pudieron recuperar los catálogos relacionales.');
-      } finally {
-        setCargandoCatalogos(false);
-      }
-    }
-    inicializarComponente();
-  }, []);
-
-// 1. Unificamos la carga inicial y el foco en una sola lógica limpia
-useFocusEffect(
-  useCallback(() => {
-    async function cargarDatosFincaYCatalogos() {
-      try {
-        // Traer finca activa
-        const fincaActiva = await db.select().from(fincas).where(eq(fincas.activa, 1)).limit(1);
-        if (fincaActiva.length === 0) {
-          Alert.alert('Atención', 'No hay ninguna finca activa seleccionada. Por favor activa una finca primero.');
-          router.back();
-          return;
-        }
-        
-        const fId = fincaActiva[0].id;
-        setFincaActivaId(fId);
-
-        // Consultas en paralelo a SQLite para máxima velocidad
-        const [dbEspecies, dbRazas, dbLotes] = await Promise.all([
-          db.select().from(especies),
-          db.select().from(razas),
-          db.select().from(lotes).where(eq(lotes.fincaId, fId))
-        ]);
-
-        setListaEspecies(dbEspecies);
-        setListaRazas(dbRazas);
-        setListaLotes(dbLotes);
-
-        // Inicializar especie por defecto SOLO si no se ha seleccionado una antes
-        if (dbEspecies.length > 0 && especieSeleccionada === null) {
-          const primerEspecieId = dbEspecies[0].id;
-          setEspecieSeleccionada(primerEspecieId);
-// Ejecutamos el primer filtrado directo aquí con los datos frescos de la DB
-// para evitar esperar al siguiente ciclo de render de React
-const filtradasIniciales = dbRazas.filter(r => Number(r.especieId) === Number(primerEspecieId));
-setRazasFiltradas(filtradasIniciales);
-
-if (filtradasIniciales.length > 0) {
-  setRazaSeleccionada(filtradasIniciales[0].id);
-}
+  // 1. Foco e Inicialización
+  useFocusEffect(
+    useCallback(() => {
+      async function cargarDatosFincaYCatalogos() {
+        try {
+          const fincaActiva = await db.select().from(fincas).where(eq(fincas.activa, 1)).limit(1);
+          if (fincaActiva.length === 0) {
+            Alert.alert('Atención', 'No hay ninguna finca activa seleccionada. Por favor activa una finca primero.');
+            router.back();
+            return;
+          }
           
-          const sugerida = categoriaSugeridaPorEspecie(dbEspecies[0].nombre, sexo);
-          setCategoria(sugerida);
+          const fId = fincaActiva[0].id;
+          setFincaActivaId(fId);
+
+          const [dbEspecies, dbRazas, dbLotes] = await Promise.all([
+            db.select().from(especies),
+            db.select().from(razas),
+            db.select().from(lotes).where(eq(lotes.fincaId, fId))
+          ]);
+
+          setListaEspecies(dbEspecies);
+          setListaRazas(dbRazas);
+          setListaLotes(dbLotes);
+
+          if (dbEspecies.length > 0 && especieSeleccionada === null) {
+            const primerEspecieId = dbEspecies[0].id;
+            setEspecieSeleccionada(primerEspecieId);
+
+            const filtradasIniciales = dbRazas.filter(r => Number(r.especieId) === Number(primerEspecieId));
+            setRazasFiltradas(filtradasIniciales);
+
+            if (filtradasIniciales.length > 0) {
+              setRazaSeleccionada(filtradasIniciales[0].id);
+            }
+            
+            const sugerida = categoriaSugeridaPorEspecie(dbEspecies[0].nombre, sexo);
+            setCategoria(sugerida);
+          }
+        } catch (error) {
+          console.error(error);
+          Alert.alert('Error', 'No se pudieron recuperar los catálogos relacionales.');
+        } finally {
+          setCargandoCatalogos(false);
         }
-      } catch (error) {
-        console.error(error);
-        Alert.alert('Error', 'No se pudieron recuperar los catálogos relacionales.');
-      } finally {
-        setCargandoCatalogos(false);
+      }
+
+      cargarDatosFincaYCatalogos();
+    }, [sexo])
+  );
+
+  // 2. Reactividad al cambiar de especie
+  useEffect(() => {
+    if (especieSeleccionada !== null && listaRazas.length > 0) {
+      const filtradas = listaRazas.filter(r => Number(r.especieId) === Number(especieSeleccionada));
+      setRazasFiltradas(filtradas);
+      
+      const yaEstaSeleccionadaValida = filtradas.some(r => r.id === razaSeleccionada);
+      if (!yaEstaSeleccionadaValida) {
+        setRazaSeleccionada(filtradas.length > 0 ? filtradas[0].id : null);
+      }
+      
+      const esp = listaEspecies.find((e) => Number(e.id) === Number(especieSeleccionada));
+      if (esp) {
+        const sugerida = categoriaSugeridaPorEspecie(esp.nombre, sexo);
+        setCategoria(sugerida);
       }
     }
+  }, [especieSeleccionada, listaRazas]); 
 
-    cargarDatosFincaYCatalogos();
-  }, [sexo]) // El foco reacciona correctamente si cambia el sexo para re-sugerir
-);
-
-// 2. El useEffect de filtrado ahora SOLO reacciona cuando el usuario CAMBIA la especie manualmente
-useEffect(() => {
-  if (especieSeleccionada !== null && listaRazas.length > 0) {
-    const filtradas = listaRazas.filter(r => Number(r.especieId) === Number(especieSeleccionada));
-    setRazasFiltradas(filtradas);
-    
-    // Evitamos pisar la raza seleccionada si esta ya pertenece al grupo filtrado
-    const yaEstaSeleccionadaValida = filtradas.some(r => r.id === razaSeleccionada);
-    if (!yaEstaSeleccionadaValida) {
-      setRazaSeleccionada(filtradas.length > 0 ? filtradas[0].id : null);
-    }
-    
-    const esp = listaEspecies.find((e) => Number(e.id) === Number(especieSeleccionada));
-    if (esp) {
-      const sugerida = categoriaSugeridaPorEspecie(esp.nombre, sexo);
-      setCategoria(sugerida);
-    }
-  }
-}, [especieSeleccionada, listaRazas]); 
-
-  // Obtener el nombre de la especie actualmente seleccionada
   const obtenerNombreEspecieActual = (): string => {
     const esp = listaEspecies.find((e) => e.id === especieSeleccionada);
     return esp ? esp.nombre.toLowerCase() : '';
@@ -200,6 +168,7 @@ useEffect(() => {
     return true;
   };
 
+  // ── Guardar y Lógica del Modo Rápido ──
   const handleGuardar = async () => {
     if (!fincaActivaId) {
       Alert.alert('Error', 'No se detectó una finca activa para asociar este animal.');
@@ -221,18 +190,28 @@ useEffect(() => {
       return;
     }
 
-    const pesoNum = parseFloat(pesoInicial);
-    if (isNaN(pesoNum) || pesoNum <= 0) {
-      Alert.alert('Dato Inválido', 'Por favor ingresa un peso inicial válido.');
-      return;
+    let pesoNum: number | null = parseFloat(pesoInicial);
+    if (pesoInicial.trim() !== '') {
+      if (isNaN(pesoNum) || pesoNum <= 0) {
+        Alert.alert('Dato Inválido', 'Por favor ingresa un peso inicial válido.');
+        return;
+      }
+    } else {
+      pesoNum = null;
     }
 
     if (!(await validarAretesPadres())) return;
 
+    // Verificar si el arete ya está en uso antes de guardarlo en BD (Extra capa de seguridad)
+    if (await areteExisteEnFinca(fincaActivaId, areteCodigo.trim().toUpperCase())) {
+      Alert.alert('Arete Duplicado', `El arete ${areteCodigo.trim().toUpperCase()} ya está registrado en esta finca.`);
+      return;
+    }
+
     try {
       setGuardando(true);
 
-      await db.insert(animales).values({
+      const values: any = {
         id: Crypto.randomUUID(),
         fincaId: fincaActivaId,
         especieId: especieSeleccionada,
@@ -249,13 +228,33 @@ useEffect(() => {
         madreId: madreId.trim().toUpperCase() || null,
         padreId: padreId.trim().toUpperCase() || null,
         notas: notas.trim() || null,
-      });
+      };
 
-      Alert.alert('¡Éxito!', `Animal con arete ${areteCodigo.toUpperCase()} registrado correctamente.`, [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      await db.insert(animales).values(values);
+
+      setGuardadosHoy((prev) => prev + 1);
+
+      if (modoRapido) {
+        // En modo rápido mantenemos fecha, lote, especie y categoria por conveniencia para registro en lotes.
+        // Solo limpiamos los datos "individuales":
+        setAreteCodigo('');
+        setNombre('');
+        setPesoInicial('');
+        setMadreId('');
+        setPadreId('');
+        setNotas('');
+        
+        // Devolvemos el foco para tipeo inmediato
+        setTimeout(() => {
+          areteInputRef.current?.focus();
+        }, 100);
+      } else {
+        Alert.alert('¡Éxito!', `Animal con arete ${areteCodigo.toUpperCase()} registrado correctamente.`, [
+          { text: 'OK', onPress: () => router.back() }
+        ]);
+      }
     } catch (error) {
-      Alert.alert('Error', 'No se pudo guardar el animal. Verifica que el arete no esté duplicado en esta finca.');
+      Alert.alert('Error', 'No se pudo guardar el animal. Verifica tu conexión a la base de datos.');
     } finally {
       setGuardando(false);
     }
@@ -269,29 +268,22 @@ useEffect(() => {
     );
   }
 
-// === SOLUCIÓN DEFINITIVA Y ROBUSTA AL FILTRADO ===
-  const especieActualKey = obtenerNombreEspecieActual(); // Ej: "bovino", "bufalino", "ovino"
-
+  const especieActualKey = obtenerNombreEspecieActual();
   const gruposCategoriasFiltrados = Object.entries(CATEGORIAS_AGRUPADAS).filter(([grupo]) => {
-    // 1. Pasamos a minúsculas y limpiamos acentos/emojis raros dejando solo letras
-    // "🐄 Bovinos" -> "bovinos", "🐑 Ovinos/Caprinos" -> "ovinos caprinos"
     const grupoLimpio = grupo
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // Quita acentos si los hay
-      .replace(/[^a-z\s]/g, ' ');      // Deja solo letras y espacios (remueve emojis y barras)
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z\s]/g, ' ');      
 
-    // 2. Si la especie actual es "ovino", usamos un comportamiento especial para evitar que caiga en "bovino"
     if (especieActualKey === 'ovino') {
       return grupoLimpio.includes('ovino') && !grupoLimpio.includes('bovino');
     }
 
-    // 3. Para "bovino", nos aseguramos de que no se confunda con "ovino" midiendo límites
     if (especieActualKey === 'bovino') {
       return grupoLimpio.includes('bovino');
     }
 
-    // 4. Para las demás especies (bufalino, equino, porcino), un .includes básico funciona perfecto
     return grupoLimpio.includes(especieActualKey);
   });
 
@@ -302,19 +294,33 @@ useEffect(() => {
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft color="#1e293b" size={24} />
+          <ArrowLeft color="#1e293b" size={22} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nuevo Animal</Text>
-        <View style={styles.spacer} />
+        
+        <View style={{ flex: 1, paddingLeft: 12 }}>
+          <Text style={styles.headerTitle}>Nuevo Animal</Text>
+          {modoRapido && guardadosHoy > 0 && (
+            <Text style={styles.headerBadge}>⚡ {guardadosHoy} registrados hoy</Text>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.modoRapidoBtn, modoRapido && styles.modoRapidoBtnOn]}
+          onPress={() => setModoRapido((v) => !v)}
+        >
+          <Zap size={14} color={modoRapido ? '#fff' : '#065f46'} />
+          <Text style={[styles.modoRapidoText, modoRapido && { color: '#fff' }]}>Rápido</Text>
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollContent} contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView style={styles.scrollContent} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
        
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Código del Arete / Identificación</Text>
           <View style={styles.inputWrapper}>
             <Hash color="#64748b" size={20} style={styles.inputIcon} />
             <TextInput
+              ref={areteInputRef}
               style={styles.input}
               placeholder="Ej. BUF-0102"
               placeholderTextColor="#94a3b8"
@@ -340,7 +346,7 @@ useEffect(() => {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Fecha de Nacimiento</Text>
+          <Text style={styles.label}>Fecha de Nacimiento / Edad Aparente</Text>
           <View style={styles.inputWrapper}>
             <Calendar color="#64748b" size={20} style={styles.inputIcon} />
             <TextInput
@@ -471,7 +477,7 @@ useEffect(() => {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Peso Inicial (Kg)</Text>
+          <Text style={styles.label}>Peso Inicial (Kg) Opcional</Text>
           <View style={styles.inputWrapper}>
             <Scale color="#64748b" size={20} style={styles.inputIcon} />
             <TextInput
@@ -514,6 +520,7 @@ useEffect(() => {
                 placeholderTextColor="#94a3b8"
                 value={madreId}
                 onChangeText={setMadreId}
+                autoCapitalize="characters"
               />
             </View>
           </View>
@@ -527,6 +534,7 @@ useEffect(() => {
                 placeholderTextColor="#94a3b8"
                 value={padreId}
                 onChangeText={setPadreId}
+                autoCapitalize="characters"
               />
             </View>
           </View>
@@ -548,13 +556,22 @@ useEffect(() => {
           </View>
         </View>
 
+        {modoRapido && (
+          <View style={styles.hintCard}>
+            <Zap size={14} color="#065f46" />
+            <Text style={styles.hintText}>
+              Modo rápido activo: Solo se limpiarán datos únicos (Arete, nombre, peso, padres) para registrar varios animales ágilmente en el mismo lote y categoría.
+            </Text>
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.btnGuardar, guardando && styles.btnDeshabilitado]}
           onPress={handleGuardar}
           disabled={guardando}
         >
           <Text style={styles.btnGuardarText}>
-            {guardando ? 'Guardando...' : 'Registrar Animal'}
+            {guardando ? 'Guardando...' : modoRapido ? '⚡ Registrar y Continuar' : 'Registrar Animal'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -574,52 +591,77 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderColor: '#e2e8f0',
+    gap: 10,
   },
   backButton: {
     padding: 8,
     borderRadius: 12,
     backgroundColor: '#f1f5f9',
-    width: 40,
-    height: 40,
     justifyContent: 'center',
     alignItems: 'center'
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#1e293b' },
+  headerBadge: { fontSize: 11, color: '#065f46', fontWeight: '600', marginTop: 2 },
+  modoRapidoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#065f46',
+    backgroundColor: '#ecfdf5',
+  },
+  modoRapidoBtnOn: { backgroundColor: '#065f46', borderColor: '#065f46' },
+  modoRapidoText: { fontSize: 12, fontWeight: '700', color: '#065f46' },
   spacer: { width: 40 },
-  scrollContent: { flex: 1, padding: 24 },
+  scrollContent: { flex: 1, padding: 20 },
   inputGroup: { marginBottom: 20 },
-  label: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  label: { fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    borderRadius: 16,
+    borderRadius: 12,
     paddingHorizontal: 14,
   },
   inputIcon: { marginRight: 10 },
-  input: { flex: 1, height: 50, color: '#1e293b', fontSize: 15 },
+  input: { flex: 1, height: 48, color: '#1e293b', fontSize: 14 },
   textAreaWrapper: { alignItems: 'flex-start' },
-  textArea: { height: 80, paddingTop: 12, textAlignVertical: 'top' },
+  textArea: { height: 70, paddingTop: 12, textAlignVertical: 'top' },
   selectorScroll: { gap: 8, paddingVertical: 4 },
-  chip: { paddingHorizontal: 16, height: 40, borderRadius: 20, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
+  chip: { paddingHorizontal: 16, height: 38, borderRadius: 20, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
   chipActive: { backgroundColor: '#065f46', borderColor: '#065f46' },
-  chipText: { fontSize: 14, fontWeight: '600', color: '#475569' },
+  chipText: { fontSize: 13, fontWeight: '600', color: '#475569' },
   chipTextActive: { color: '#ffffff' },
-  noDataText: { fontSize: 14, color: '#94a3b8', paddingVertical: 4 },
+  noDataText: { fontSize: 13, color: '#94a3b8', paddingVertical: 4 },
   linkLotes: { marginTop: 8, alignSelf: 'flex-start' },
   linkLotesText: { fontSize: 14, fontWeight: '700', color: '#065f46' },
   groupLabel: { fontSize: 11, fontWeight: '600', color: '#64748b', marginBottom: 6, fontStyle: 'italic' },
   selectorContainer: { flexDirection: 'row', gap: 12 },
-  selectorOption: { flex: 1, height: 48, borderRadius: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
+  selectorOption: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
   selectorActive: { backgroundColor: '#065f46', borderColor: '#065f46' },
-  selectorText: { fontSize: 15, fontWeight: '600', color: '#475569' },
+  selectorText: { fontSize: 14, fontWeight: '600', color: '#475569' },
   selectorTextActive: { color: '#ffffff' },
+  hintCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#ecfdf5',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  hintText: { flex: 1, fontSize: 12, color: '#065f46', lineHeight: 17 },
   btnGuardar: {
     backgroundColor: '#065f46',
-    height: 54,
-    borderRadius: 16,
+    height: 50,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
@@ -629,6 +671,6 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 3,
   },
-  btnDeshabilitado: { backgroundColor: '#a7f3d0' },
-  btnGuardarText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  btnDeshabilitado: { opacity: 0.6 },
+  btnGuardarText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
 });
