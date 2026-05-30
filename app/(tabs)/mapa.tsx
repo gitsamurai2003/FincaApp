@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Mapbox from '@rnmapbox/maps';
+import Constants from 'expo-constants';
 import * as Sharing from 'expo-sharing';
 import {
   BookOpen,
@@ -18,8 +19,8 @@ import {
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 
-// 🔑 AÑADE AQUÍ TU TOKEN PÚBLICO DE MAPBOX (EMPIEZA POR pk.)
-Mapbox.setAccessToken('pk.eyJ1IjoiYWRvbGZvZ2YyMDAzIiwiYSI6ImNtcHFmMTVldDBvMjgycXB4NDk3NG1jdTIifQ.EfvjYoTbLPtll8SieFjilw');
+const mapboxToken = Constants.expoConfig?.extra?.MAPBOX;
+Mapbox.setAccessToken(mapboxToken);
 
 interface Coordenada {
   latitude: number;
